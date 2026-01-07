@@ -1,5 +1,5 @@
 // src/services/api.ts
-const API_BASE_URL = 'http://localhost:8000';
+const API_BASE_URL = 'http://localhost:8001';
 
 // --- Types (Backend schemas.py'den alınmıştır) ---
 export interface User {
@@ -8,6 +8,7 @@ export interface User {
   avg_scr: number;
   rev_cnt: number;
   created_at: string;
+  role?: string;
 }
 
 export interface UserCreate {
@@ -120,6 +121,108 @@ export interface UserReviewDetail {
   reservation_start: string;
   reservation_end: string;
   review_created_at: string;
+}
+
+// --- Analytics Types ---
+export interface TopUserStats {
+  user_id: number;
+  user_name: string;
+  avg_scr: number;
+  rev_cnt: number;
+  rank: number;
+}
+
+export interface BorrowHistoryItem {
+  reservation_id: number;
+  tool_id: number;
+  tool_name: string;
+  start_t: string;
+  end_t: string;
+  status: string; // 'Aktif', 'Tamamlandı', vb.
+  owner_id: number;
+  owner_name: string;
+  created_at: string;
+}
+
+export interface AvailableToolSearch {
+  tool_id: number;
+  tool_name: string;
+  owner_id: number;
+  owner_name: string;
+  category_name: string | null;
+  first_available_date: string;
+  availability_gap_days: number;
+}
+
+export interface LendingPerformance {
+  tool_id: number;
+  tool_name: string;
+  total_lends: number;
+  avg_rating: number;
+  five_star_count: number;
+  four_star_count: number;
+  three_star_count: number;
+  two_star_count: number;
+  one_star_count: number;
+}
+
+// --- Views Types ---
+export interface RecentReservationView {
+  reservation_id: number;
+  tool_id: number;
+  tool_name: string;
+  borrower_id: number;
+  borrower_name: string;
+  owner_id: number;
+  owner_name: string;
+  start_t: string;
+  end_t: string;
+  created_at: string;
+}
+
+export interface UserActivityView {
+  user_id: number;
+  user_name: string;
+  avg_scr: number;
+  rev_cnt: number;
+  is_borrower: boolean;
+  is_lender: boolean;
+}
+
+export interface DualRoleUserView {
+  user_id: number;
+  user_name: string;
+  avg_scr: number;
+  rev_cnt: number;
+  total_borrowing_count: number;
+  total_lending_count: number;
+}
+
+// --- Statistics Types (Set Operations: UNION, INTERSECT, EXCEPT) ---
+export interface AllActiveUsersStats {
+  user_id: number;
+  user_name: string;
+  activity_type: string; // 'Borrower' or 'Lender'
+}
+
+export interface DualRoleUsersStats {
+  user_id: number;
+  user_name: string;
+}
+
+export interface LendersOnlyStats {
+  user_id: number;
+  user_name: string;
+}
+
+export interface SystemStatisticsSummary {
+  total_users: number;
+  total_tools: number;
+  total_reservations: number;
+  total_reviews: number;
+  active_borrowers: number;
+  active_lenders: number;
+  avg_tools_per_owner: number | null;
 }
 
 // --- Helper Function ---
@@ -334,5 +437,80 @@ export const reviewApi = {
       body: JSON.stringify(review),
     });
     return handleResponse<Review>(res);
+  },
+};
+
+// --- ANALYTICS API ---
+export const analyticsApi = {
+  getTopUsers: async (): Promise<TopUserStats[]> => {
+    const res = await fetch(`${API_BASE_URL}/analytics/top-users`);
+    return handleResponse<TopUserStats[]>(res);
+  },
+
+  getBorrowHistory: async (userId: number, limit: number = 10): Promise<BorrowHistoryItem[]> => {
+    const params = new URLSearchParams();
+    params.append('limit', limit.toString());
+    const res = await fetch(`${API_BASE_URL}/analytics/history/${userId}?${params.toString()}`);
+    return handleResponse<BorrowHistoryItem[]>(res);
+  },
+
+  searchAvailableTools: async (keyword?: string, daysAhead: number = 30): Promise<AvailableToolSearch[]> => {
+    const params = new URLSearchParams();
+    if (keyword) params.append('keyword', keyword);
+    params.append('days_ahead', daysAhead.toString());
+    const res = await fetch(`${API_BASE_URL}/analytics/search-tools?${params.toString()}`);
+    return handleResponse<AvailableToolSearch[]>(res);
+  },
+
+  getLenderPerformance: async (userId: number, months: number = 3): Promise<LendingPerformance[]> => {
+    const params = new URLSearchParams();
+    params.append('months', months.toString());
+    const res = await fetch(`${API_BASE_URL}/analytics/performance/${userId}?${params.toString()}`);
+    return handleResponse<LendingPerformance[]>(res);
+  },
+};
+
+// --- VIEWS API ---
+export const viewsApi = {
+  getRecentReservations: async (): Promise<RecentReservationView[]> => {
+    const res = await fetch(`${API_BASE_URL}/views/recent-reservations`);
+    return handleResponse<RecentReservationView[]>(res);
+  },
+
+  getAllActiveUsers: async (excludeName: string = 'Mehmet'): Promise<UserActivityView[]> => {
+    const params = new URLSearchParams();
+    params.append('exclude_name', excludeName);
+    const res = await fetch(`${API_BASE_URL}/views/all-active-users?${params.toString()}`);
+    return handleResponse<UserActivityView[]>(res);
+  },
+
+  getDualRoleUsers: async (excludeName: string = 'Mehmet'): Promise<DualRoleUserView[]> => {
+    const params = new URLSearchParams();
+    params.append('exclude_name', excludeName);
+    const res = await fetch(`${API_BASE_URL}/views/dual-role-users?${params.toString()}`);
+    return handleResponse<DualRoleUserView[]>(res);
+  },
+};
+
+// --- STATISTICS API (Set Operations: UNION, INTERSECT, EXCEPT) ---
+export const statisticsApi = {
+  getSystemSummary: async (): Promise<SystemStatisticsSummary> => {
+    const res = await fetch(`${API_BASE_URL}/statistics/summary`);
+    return handleResponse<SystemStatisticsSummary>(res);
+  },
+
+  getAllActiveUsers: async (): Promise<AllActiveUsersStats[]> => {
+    const res = await fetch(`${API_BASE_URL}/statistics/all-active-users`);
+    return handleResponse<AllActiveUsersStats[]>(res);
+  },
+
+  getDualRoleUsers: async (): Promise<DualRoleUsersStats[]> => {
+    const res = await fetch(`${API_BASE_URL}/statistics/dual-role-users`);
+    return handleResponse<DualRoleUsersStats[]>(res);
+  },
+
+  getLendersOnly: async (): Promise<LendersOnlyStats[]> => {
+    const res = await fetch(`${API_BASE_URL}/statistics/lenders-only`);
+    return handleResponse<LendersOnlyStats[]>(res);
   },
 };

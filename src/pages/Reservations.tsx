@@ -1,19 +1,80 @@
 // src/pages/Reservations.tsx
 import React, { useEffect, useState } from 'react';
-import { Calendar, Wrench, Clock, CheckCircle, XCircle } from 'lucide-react';
-import { Reservation, Tool, toolApi } from '../services/api';
+import { Calendar, Wrench, Clock, CheckCircle, XCircle, Star } from 'lucide-react';
+import { Reservation, Tool, toolApi, userApi } from '../services/api';
+import ReviewModal from '../components/ReviewModal';
 
 // Props arayüzü
 interface ReservationsProps {
   reservations: Reservation[];
   loading?: boolean;
+  currentUserId?: number;
 }
 
 // Tool cache'i için tip
 type ToolCache = Record<number, Tool>;
 
-export default function Reservations({ reservations, loading = false }: ReservationsProps) {
+// Review modal state için interface
+interface ReviewModalState {
+  isOpen: boolean;
+  reservationId: number;
+  toolName: string;
+  ownerName: string;
+  ownerId: number;
+}
+
+export default function Reservations({ reservations, loading = false, currentUserId }: ReservationsProps) {
   const [tools, setTools] = useState<ToolCache>({});
+  // reservation_id -> score mapping
+  const [reviewedReservations, setReviewedReservations] = useState<Map<number, number>>(new Map());
+  const [reviewModal, setReviewModal] = useState<ReviewModalState>({
+    isOpen: false,
+    reservationId: 0,
+    toolName: '',
+    ownerName: '',
+    ownerId: 0,
+  });
+
+  // Kullanıcının yaptığı değerlendirmeleri yükle
+  useEffect(() => {
+    if (!currentUserId) return;
+
+    const loadSubmittedReviews = async () => {
+      try {
+        const reviews = await userApi.getSubmittedReviews(currentUserId);
+        const reviewMap = new Map<number, number>();
+        reviews.forEach(review => {
+          reviewMap.set(review.reservation_id, review.score);
+        });
+        setReviewedReservations(reviewMap);
+      } catch (err) {
+        console.error('Değerlendirmeler yüklenemedi:', err);
+      }
+    };
+
+    loadSubmittedReviews();
+  }, [currentUserId]);
+
+  // Review modal'ı aç
+  const openReviewModal = (reservationId: number, toolName: string, ownerName: string, ownerId: number) => {
+    setReviewModal({
+      isOpen: true,
+      reservationId,
+      toolName,
+      ownerName,
+      ownerId,
+    });
+  };
+
+  // Review modal'ı kapat
+  const closeReviewModal = () => {
+    setReviewModal(prev => ({ ...prev, isOpen: false }));
+  };
+
+  // Review başarılı olduğunda
+  const handleReviewSuccess = (score: number) => {
+    setReviewedReservations(prev => new Map(prev).set(reviewModal.reservationId, score));
+  };
 
   // Rezervasyonlardaki tool bilgilerini yükle
   useEffect(() => {
@@ -80,69 +141,118 @@ export default function Reservations({ reservations, loading = false }: Reservat
 
   return (
     <div className="space-y-4 max-w-4xl mx-auto">
-      <h2 className="text-xl md:text-2xl font-bold text-gray-800 mb-4">Rezervasyonlarım</h2>
-      {reservations.map((reservation) => {
-        const tool = tools[reservation.tool_id];
-        const status = getReservationStatus(reservation);
-        const StatusIcon = status.icon;
-        
-        const colorClasses = {
-          yellow: 'bg-yellow-100 text-yellow-700 border-yellow-400',
-          green: 'bg-green-100 text-green-700 border-green-400',
-          gray: 'bg-gray-100 text-gray-600 border-gray-400',
-        };
+      <h2 className="text-xl md:text-2xl font-bold text-gray-800">Rezervasyonlarım</h2>
 
-        return (
-          <div 
-            key={reservation.reservation_id} 
-            className={`bg-white p-4 md:p-6 rounded-2xl shadow-sm border-l-4 ${
-              status.color === 'yellow' ? 'border-yellow-400' : 
-              status.color === 'green' ? 'border-green-400' : 'border-gray-400'
-            } flex gap-4 md:gap-6`}
-          >
-            {/* Tool Görseli (Placeholder) */}
-            <div className="w-20 h-20 md:w-28 md:h-28 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
-              <Wrench className="w-8 h-8 md:w-12 md:h-12 text-gray-300" />
-            </div>
-            
-            <div className="flex-1">
-              <div className="flex justify-between items-start flex-wrap gap-2">
-                <h3 className="font-bold text-gray-800">
-                  {tool?.tool_name || `Alet #${reservation.tool_id}`}
-                </h3>
-                <span className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${
-                  colorClasses[status.color as keyof typeof colorClasses]
-                }`}>
-                  <StatusIcon className="w-3 h-3" />
-                  {status.label}
-                </span>
+      {/* Rezervasyon Listesi */}
+      <div className="space-y-4">
+        {reservations.map((reservation) => {
+          const tool = tools[reservation.tool_id];
+          const status = getReservationStatus(reservation);
+          const StatusIcon = status.icon;
+
+            const colorClasses = {
+            yellow: 'bg-yellow-100 text-yellow-700 border-yellow-400',
+            green: 'bg-green-100 text-green-700 border-green-400',
+            gray: 'bg-gray-100 text-gray-600 border-gray-400',
+          };
+
+          return (
+            <div
+              key={reservation.reservation_id}
+              className={`bg-white p-4 md:p-6 rounded-2xl shadow-sm border-l-4 ${
+                status.color === 'yellow'
+                  ? 'border-yellow-400'
+                  : status.color === 'green'
+                    ? 'border-green-400'
+                    : 'border-gray-400'
+              } flex gap-4 md:gap-6`}
+            >
+              <div className="w-20 h-20 md:w-28 md:h-28 rounded-lg bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center flex-shrink-0">
+                <Wrench className="w-8 h-8 md:w-12 md:h-12 text-gray-300" />
               </div>
-              
-              <p className="text-sm text-gray-500 mt-1">
-                Rezervasyon #{reservation.reservation_id}
-              </p>
-              
-              <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3 text-sm text-gray-600">
-                <div className="flex items-center gap-2">
-                  <Calendar className="w-4 h-4 text-blue-500" />
-                  <span className="font-medium">Başlangıç:</span>
-                  <span>{new Date(reservation.start_t).toLocaleDateString('tr-TR')}</span>
+
+              <div className="flex-1">
+                <div className="flex justify-between items-start flex-wrap gap-2">
+                  <h3 className="font-bold text-gray-800">
+                    {tool?.tool_name || `Alet #${reservation.tool_id}`}
+                  </h3>
+                  <span
+                    className={`text-xs font-bold px-2 py-1 rounded-full flex items-center gap-1 ${
+                      colorClasses[status.color as keyof typeof colorClasses]
+                    }`}
+                  >
+                    <StatusIcon className="w-3 h-3" />
+                    {status.label}
+                  </span>
                 </div>
-              </div>
-              
-              <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
-                <Calendar className="w-4 h-4 text-red-500" />
-                <span className="font-medium">Bitiş:</span>
-                <span>{new Date(reservation.end_t).toLocaleDateString('tr-TR')}</span>
-              </div>
 
-              <p className="text-xs text-gray-400 mt-2">
-                Oluşturuldu: {new Date(reservation.created_at).toLocaleDateString('tr-TR')}
-              </p>
+                <p className="text-sm text-gray-500 mt-1">
+                  Rezervasyon #{reservation.reservation_id}
+                </p>
+
+                <div className="flex flex-col sm:flex-row sm:items-center gap-2 mt-3 text-sm text-gray-600">
+                  <div className="flex items-center gap-2">
+                    <Calendar className="w-4 h-4 text-blue-500" />
+                    <span className="font-medium">Başlangıç:</span>
+                    <span>{new Date(reservation.start_t).toLocaleDateString('tr-TR')}</span>
+                  </div>
+                </div>
+
+                <div className="flex items-center gap-2 mt-1 text-sm text-gray-600">
+                  <Calendar className="w-4 h-4 text-red-500" />
+                  <span className="font-medium">Bitiş:</span>
+                  <span>{new Date(reservation.end_t).toLocaleDateString('tr-TR')}</span>
+                </div>
+
+                <p className="text-xs text-gray-400 mt-2">
+                  Oluşturuldu: {new Date(reservation.created_at).toLocaleDateString('tr-TR')}
+                </p>
+
+                {/* Değerlendirme Butonu - Tamamlanmış rezervasyonlar için */}
+                {status.label === 'Tamamlandı' && tool && !reviewedReservations.has(reservation.reservation_id) && (
+                  <button
+                    onClick={() => openReviewModal(
+                      reservation.reservation_id,
+                      tool.tool_name,
+                      `Kullanıcı #${tool.user_id}`,
+                      tool.user_id
+                    )}
+                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                  >
+                    <Star className="w-4 h-4" />
+                    Değerlendir
+                  </button>
+                )}
+                {reviewedReservations.has(reservation.reservation_id) && (
+                  <div className="mt-3 flex items-center gap-2 bg-green-50 text-green-700 text-sm font-medium px-3 py-2 rounded-xl">
+                    <CheckCircle className="w-4 h-4" />
+                    <span>Değerlendirildi</span>
+                    <div className="flex items-center gap-0.5 ml-1">
+                      {[...Array(reviewedReservations.get(reservation.reservation_id))].map((_, i) => (
+                        <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                      ))}
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
+      </div>
+
+      {/* Review Modal */}
+      {currentUserId && (
+        <ReviewModal
+          isOpen={reviewModal.isOpen}
+          onClose={closeReviewModal}
+          reservationId={reviewModal.reservationId}
+          toolName={reviewModal.toolName}
+          ownerName={reviewModal.ownerName}
+          ownerId={reviewModal.ownerId}
+          reviewerId={currentUserId}
+          onSuccess={handleReviewSuccess}
+        />
+      )}
     </div>
   );
 }

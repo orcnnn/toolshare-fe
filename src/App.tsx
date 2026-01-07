@@ -1,6 +1,6 @@
 // src/App.tsx
 import React, { useState, useEffect } from 'react';
-import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle, AlertCircle, LogOut } from 'lucide-react';
+import { Home, Calendar, User as UserIcon, MapPin, PlusCircle, CheckCircle, AlertCircle, LogOut, Trophy, Crown } from 'lucide-react';
 
 // Bileşenleri İçe Aktarma
 import { Header, NavButton } from './components/UI';
@@ -8,7 +8,9 @@ import Marketplace from './pages/Marketplace';
 import AddToolForm from './pages/AddToolForm';
 import Reservations from './pages/Reservations';
 import UserProfile from './pages/UserProfile';
+import Leaderboard from './pages/Leaderboard';
 import AuthPage from './pages/AuthPage';
+import AdminDashboard from './pages/AdminDashboard';
 
 // Hook ve API'leri İçe Aktarma
 import { useTools } from './hooks/useTools';
@@ -22,7 +24,7 @@ import {
 } from './services/api';
 
 // Sekme isimleri için bir tip tanımlıyoruz
-type Tab = 'home' | 'reservations' | 'add' | 'profile';
+type Tab = 'home' | 'reservations' | 'add' | 'leaderboard' | 'profile' | 'admin';
 
 // Bildirim yapısı için interface
 interface Notification {
@@ -184,8 +186,13 @@ export default function App() {
           <Reservations 
             reservations={myReservations}
             loading={userLoading}
+            currentUserId={currentUser.user_id}
           />
         );
+      case 'leaderboard':
+        return <Leaderboard />;
+      case 'admin':
+        return currentUser?.role === 'admin' ? <AdminDashboard /> : null;
       case 'profile':
         return (
           <UserProfile 
@@ -194,6 +201,7 @@ export default function App() {
             userReservations={myReservations}
             loading={userLoading}
             onLogout={handleLogout}
+            onAdminDashboard={currentUser?.role === 'admin' ? () => setActiveTab('admin') : undefined}
           />
         );
       default:
@@ -251,7 +259,7 @@ export default function App() {
 
       {/* Alt Navigasyon - Mobil'de görünür, masaüstünde gizli */}
       <nav className="fixed bottom-0 w-full bg-white border-t border-gray-200 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.05)] z-20 lg:hidden">
-        <div className="max-w-5xl mx-auto flex justify-around py-3">
+        <div className="max-w-5xl mx-auto flex justify-around py-2">
           <NavButton 
             active={activeTab === 'home'} 
             onClick={() => setActiveTab('home')} 
@@ -262,9 +270,9 @@ export default function App() {
             active={activeTab === 'reservations'} 
             onClick={() => setActiveTab('reservations')} 
             icon={<Calendar size={24} />} 
-            label="Kiraladıklarım" 
+            label="Kiralama" 
           />
-          <div className="relative -top-6">
+          <div className="relative -top-4">
             <button 
               onClick={() => setActiveTab('add')}
               className="bg-blue-600 text-white p-4 rounded-full shadow-lg hover:bg-blue-700 transition-transform transform hover:scale-105 active:scale-95"
@@ -273,10 +281,10 @@ export default function App() {
             </button>
           </div>
           <NavButton 
-            active={false} 
-            onClick={() => triggerNotification('Mesajlaşma özelliği yakında!', 'info')} 
-            icon={<MapPin size={24} />} 
-            label="Harita" 
+            active={activeTab === 'leaderboard'} 
+            onClick={() => setActiveTab('leaderboard')} 
+            icon={<Trophy size={24} />} 
+            label="Liderlik" 
           />
           <NavButton 
             active={activeTab === 'profile'} 

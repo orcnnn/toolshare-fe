@@ -1,7 +1,7 @@
 // src/pages/Marketplace.tsx
 import React, { ChangeEvent, useEffect, useState } from 'react';
-import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle } from 'lucide-react';
-import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi } from '../services/api';
+import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle, Activity, TrendingUp } from 'lucide-react';
+import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi, analyticsApi, viewsApi, AvailableToolSearch, RecentReservationView } from '../services/api';
 import ReservationModal from '../components/ReservationModal';
 
 // Filter tipi
@@ -54,6 +54,51 @@ export default function Marketplace({
   const [filteredByStatus, setFilteredByStatus] = useState<ToolWithStatus[]>([]);
   const [statusLoading, setStatusLoading] = useState(false);
   const [toolStatuses, setToolStatuses] = useState<Record<number, ToolWithStatus>>({});
+
+  // Advanced search state'leri
+  const [advancedSearchResults, setAdvancedSearchResults] = useState<AvailableToolSearch[]>([]);
+  const [useAdvancedSearch, setUseAdvancedSearch] = useState(false);
+  const [advancedLoading, setAdvancedLoading] = useState(false);
+
+  // Recent activity state'leri
+  const [recentActivity, setRecentActivity] = useState<RecentReservationView[]>([]);
+  const [showActivity, setShowActivity] = useState(false);
+
+  // Advanced search'ü tetikle
+  useEffect(() => {
+    if (!useAdvancedSearch || !searchTerm) return;
+
+    const performAdvancedSearch = async () => {
+      setAdvancedLoading(true);
+      try {
+        const results = await analyticsApi.searchAvailableTools(searchTerm, 30);
+        setAdvancedSearchResults(results);
+      } catch (err) {
+        console.error('Advanced search hatası:', err);
+        setAdvancedSearchResults([]);
+      } finally {
+        setAdvancedLoading(false);
+      }
+    };
+
+    performAdvancedSearch();
+  }, [searchTerm, useAdvancedSearch]);
+
+  // Recent activity'yi yükle
+  useEffect(() => {
+    if (!showActivity) return;
+
+    const loadRecentActivity = async () => {
+      try {
+        const activity = await viewsApi.getRecentReservations();
+        setRecentActivity(activity.slice(0, 5));
+      } catch (err) {
+        console.error('Recent activity yükleme hatası:', err);
+      }
+    };
+
+    loadRecentActivity();
+  }, [showActivity]);
 
   // Durum bilgisini yükle (API zaten owner bilgisini döndürüyor)
   useEffect(() => {
@@ -222,6 +267,32 @@ export default function Marketplace({
             onChange={handleSearchChange}
           />
         </div>
+
+        {/* Advanced Search Butonu */}
+        <div className="flex gap-2">
+          <button
+            onClick={() => setUseAdvancedSearch(!useAdvancedSearch)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              useAdvancedSearch 
+                ? 'bg-purple-600 text-white' 
+                : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
+            }`}
+          >
+            <TrendingUp className="w-4 h-4" />
+            Gelişmiş Arama
+          </button>
+          <button
+            onClick={() => setShowActivity(!showActivity)}
+            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+              showActivity 
+                ? 'bg-cyan-600 text-white' 
+                : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100'
+            }`}
+          >
+            <Activity className="w-4 h-4" />
+            Son Aktivite
+          </button>
+        </div>
         
         {/* Durum Filtreleri */}
         <div className="flex items-center gap-2">
@@ -267,6 +338,68 @@ export default function Marketplace({
           </span>
         </div>
       </div>
+
+      {/* Gelişmiş Arama Sonuçları */}
+      {useAdvancedSearch && searchTerm && (
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border border-purple-200">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <TrendingUp className="w-5 h-5 text-purple-600" />
+            Müsait Aletler (Sonraki 30 Gün)
+          </h3>
+          {advancedLoading ? (
+            <div className="flex items-center justify-center py-4">
+              <span className="animate-spin rounded-full h-5 w-5 border-2 border-purple-600 border-t-transparent mr-2"></span>
+              <span className="text-gray-600">Aranıyor...</span>
+            </div>
+          ) : advancedSearchResults.length > 0 ? (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+              {advancedSearchResults.map(tool => (
+                <div key={tool.tool_id} className="bg-white p-3 rounded-xl">
+                  <p className="font-medium text-gray-800">{tool.tool_name}</p>
+                  <p className="text-sm text-gray-600">{tool.owner_name}</p>
+                  <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
+                    {/* <span>İlk Müsait: {new Date(tool.first_available_date).toLocaleDateString('tr-TR')}</span> */}
+                    {/* <span className="bg-green-100 text-green-700 px-2 py-1 rounded">{tool.availability_gap_days} gün</span> */}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-600 text-center py-4">Arama kriterine uygun müsait alet bulunmadı.</p>
+          )}
+        </div>
+      )}
+
+      {/* Son Aktivite Widget */}
+      {showActivity && (
+        <div className="bg-gradient-to-r from-cyan-50 to-blue-50 p-4 rounded-2xl border border-cyan-200">
+          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+            <Activity className="w-5 h-5 text-cyan-600" />
+            Platformdaki Son Aktiviteler
+          </h3>
+          {recentActivity.length > 0 ? (
+            <div className="space-y-3">
+              {recentActivity.map(activity => (
+                <div key={activity.reservation_id} className="bg-white p-3 rounded-xl flex items-center gap-3">
+                  <div className="flex-1 min-w-0">
+                    <p className="text-sm font-medium text-gray-800">
+                      <span className="text-blue-600 font-semibold">{activity.borrower_name}</span> tarafından{' '}
+                      <span className="text-blue-600 font-semibold">{activity.tool_name}</span> kiralandı
+                    </p>
+                    <p className="text-xs text-gray-500 mt-1">
+                      {new Date(activity.created_at).toLocaleDateString('tr-TR')} 
+                      {' • '} 
+                      {new Date(activity.start_t).toLocaleDateString('tr-TR')} - {new Date(activity.end_t).toLocaleDateString('tr-TR')}
+                    </p>
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <p className="text-gray-600 text-center py-4">Son aktivite bulunmadı.</p>
+          )}
+        </div>
+      )}
 
       {/* İlan Listesi */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
