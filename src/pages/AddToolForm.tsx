@@ -35,6 +35,12 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
       setError('Lütfen alet adı girin');
       return;
     }
+    
+    if (!selectedCategoryId) {
+      setError('Lütfen bir kategori seçin');
+      return;
+    }
+    
     setIsSubmitting(true);
     setError(null);
 
@@ -42,6 +48,7 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
       const toolData: ToolCreate = {
         tool_name: toolName.trim(),
         user_id: userId,
+        category_id: parseInt(selectedCategoryId),
       };
 
       const newTool = await toolApi.create(toolData);
@@ -61,7 +68,7 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
   
   const handleChangeCatagory = (e: { target: { value: React.SetStateAction<string>; }; }) => {
     setSelectedCategoryId(e.target.value);
-    console.log("Seçilen Kategori ID:", e.target.value);
+    if (error) setError(null);
   };
 
   return (
@@ -159,9 +166,9 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
         <div className="pt-4">
           <button 
             type="submit" 
-            disabled={isSubmitting || !toolName.trim()}
+            disabled={isSubmitting || !toolName.trim() || !selectedCategoryId}
             className={`w-full font-bold py-4 rounded-xl shadow-lg transition-all flex items-center justify-center gap-2 ${
-              isSubmitting || !toolName.trim()
+              isSubmitting || !toolName.trim() || !selectedCategoryId
                 ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
                 : 'bg-blue-600 text-white hover:bg-blue-700 shadow-blue-200'
             }`}

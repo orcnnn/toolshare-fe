@@ -1,8 +1,8 @@
 // src/pages/UserProfile.tsx
 import React, { useEffect, useState } from 'react';
-import { Star, ShieldCheck, Clock, User as UserIcon, Wrench, LogOut, TrendingUp, Crown } from 'lucide-react';
+import { Star, ShieldCheck, Clock, User as UserIcon, Wrench, LogOut, TrendingUp, Crown, Trash2, AlertTriangle } from 'lucide-react';
 import { ProfileMenuItem } from '../components/UI';
-import { User, Tool, Reservation, analyticsApi, LendingPerformance } from '../services/api';
+import { User, Tool, Reservation, analyticsApi, LendingPerformance, userApi } from '../services/api';
 
 // Props için arayüz tanımlıyoruz
 interface UserProfileProps {
@@ -16,6 +16,8 @@ interface UserProfileProps {
 
 export default function UserProfile({ user, userTools, userReservations, loading = false, onLogout, onAdminDashboard }: UserProfileProps) {
   const [lenderPerformance, setLenderPerformance] = useState<LendingPerformance[]>([]);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [deleteLoading, setDeleteLoading] = useState(false);
 
   // Alet performans verilerini yükle
   useEffect(() => {
@@ -204,6 +206,75 @@ export default function UserProfile({ user, userTools, userReservations, loading
           <LogOut className="w-5 h-5" />
           <span>Çıkış Yap</span>
         </button>
+      )}
+
+      {/* Hesabı Sil Butonu */}
+      <button
+        onClick={() => setShowDeleteConfirm(true)}
+        className="w-full flex items-center justify-center gap-3 p-4 bg-gray-100 hover:bg-red-100 text-gray-500 hover:text-red-600 font-semibold rounded-2xl transition-colors"
+      >
+        <Trash2 className="w-5 h-5" />
+        <span>Hesabı Sil</span>
+      </button>
+
+      {/* Hesap Silme Onay Modalı */}
+      {showDeleteConfirm && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in duration-200">
+            <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-red-100 rounded-full">
+              <AlertTriangle className="w-8 h-8 text-red-600" />
+            </div>
+            
+            <h3 className="text-xl font-bold text-gray-800 text-center mb-2">
+              Hesabı Silmek İstediğinize Emin Misiniz?
+            </h3>
+            
+            <p className="text-gray-500 text-center text-sm mb-6">
+              Bu işlem geri alınamaz. Hesabınız, tüm aletleriniz, rezervasyonlarınız ve değerlendirmeleriniz kalıcı olarak silinecektir.
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setShowDeleteConfirm(false)}
+                disabled={deleteLoading}
+                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors"
+              >
+                İptal
+              </button>
+              <button
+                onClick={async () => {
+                  if (!user) return;
+                  setDeleteLoading(true);
+                  try {
+                    await userApi.delete(user.user_id);
+                    // Başarılı silme sonrası çıkış yap
+                    onLogout?.();
+                  } catch (err) {
+                    console.error('Hesap silme hatası:', err);
+                    alert('Hesap silinirken bir hata oluştu.');
+                  } finally {
+                    setDeleteLoading(false);
+                    setShowDeleteConfirm(false);
+                  }
+                }}
+                disabled={deleteLoading}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                {deleteLoading ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                    Siliniyor...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Evet, Sil
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
       )}
     </div>
   );

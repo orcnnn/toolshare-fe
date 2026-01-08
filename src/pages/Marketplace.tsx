@@ -1,8 +1,15 @@
 // src/pages/Marketplace.tsx
 import React, { ChangeEvent, useEffect, useState } from 'react';
-import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle, Activity, TrendingUp } from 'lucide-react';
-import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi, analyticsApi, viewsApi, AvailableToolSearch, RecentReservationView } from '../services/api';
+import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle, TrendingUp, User as UserIcon, ChevronDown, X } from 'lucide-react';
+import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi, analyticsApi, AvailableToolSearch } from '../services/api';
 import ReservationModal from '../components/ReservationModal';
+
+// Placeholder görseller
+import placeholder1 from '../assets/placeholder1.png';
+import placeholder2 from '../assets/placeholder2.png';
+import placeholder3 from '../assets/placeholder3.jpg';
+
+const placeholderImages = [placeholder1, placeholder2, placeholder3];
 
 // Filter tipi
 type FilterType = 'all' | 'never_reserved' | 'currently_available' | 'currently_rented';
@@ -60,9 +67,11 @@ export default function Marketplace({
   const [useAdvancedSearch, setUseAdvancedSearch] = useState(false);
   const [advancedLoading, setAdvancedLoading] = useState(false);
 
-  // Recent activity state'leri
-  const [recentActivity, setRecentActivity] = useState<RecentReservationView[]>([]);
-  const [showActivity, setShowActivity] = useState(false);
+  // Bana ait filtresi
+  const [showOnlyMyTools, setShowOnlyMyTools] = useState(false);
+  
+  // Filtreleme dropdown state
+  const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
 
   // Advanced search'ü tetikle
   useEffect(() => {
@@ -83,22 +92,6 @@ export default function Marketplace({
 
     performAdvancedSearch();
   }, [searchTerm, useAdvancedSearch]);
-
-  // Recent activity'yi yükle
-  useEffect(() => {
-    if (!showActivity) return;
-
-    const loadRecentActivity = async () => {
-      try {
-        const activity = await viewsApi.getRecentReservations();
-        setRecentActivity(activity.slice(0, 5));
-      } catch (err) {
-        console.error('Recent activity yükleme hatası:', err);
-      }
-    };
-
-    loadRecentActivity();
-  }, [showActivity]);
 
   // Durum bilgisini yükle (API zaten owner bilgisini döndürüyor)
   useEffect(() => {
@@ -153,10 +146,17 @@ export default function Marketplace({
     }
   }, [tools]);
   
-  // Filtreleme: status filter + search
+  // Filtreleme: status filter + search + bana ait
   const displayTools = statusFilter === 'all' ? tools : filteredByStatus;
   const filteredTools = displayTools.filter(tool => {
     const matchesSearch = tool.tool_name.toLowerCase().includes(searchTerm.toLowerCase());
+    
+    // Bana ait filtresi
+    if (showOnlyMyTools) {
+      const toolOwnerId = 'user_id' in tool ? tool.user_id : (tool as ToolWithStatus).owner_id;
+      if (toolOwnerId !== currentUserId) return false;
+    }
+    
     return matchesSearch;
   });
 
@@ -256,150 +256,258 @@ export default function Marketplace({
       )}
 
       {/* Arama ve Filtreleme */}
-      <div className="bg-white p-4 rounded-2xl shadow-sm space-y-4">
+      <div className={`p-4 rounded-2xl shadow-sm space-y-4 transition-all duration-300 ${
+        useAdvancedSearch 
+          ? 'bg-gradient-to-r from-purple-600 to-purple-700' 
+          : 'bg-white'
+      }`}>
         <div className="relative">
-          <Search className="absolute left-3 top-3 text-gray-400 w-5 h-5" />
+          <Search className={`absolute left-3 top-3 w-5 h-5 ${useAdvancedSearch ? 'text-purple-300' : 'text-gray-400'}`} />
           <input 
             type="text" 
-            placeholder="Ne aramıştınız? (Matkap, Çadır...)" 
-            className="w-full pl-10 pr-4 py-3 bg-gray-100 rounded-xl focus:outline-none focus:ring-2 focus:ring-blue-500 transition-all"
+            placeholder={useAdvancedSearch ? "Müsait aletlerde ara..." : "Ne aramıştınız? (Matkap, Çadır...)"} 
+            className={`w-full pl-10 pr-4 py-3 rounded-xl focus:outline-none transition-all ${
+              useAdvancedSearch 
+                ? 'bg-purple-500/50 text-white placeholder-purple-200 focus:ring-2 focus:ring-purple-300' 
+                : 'bg-gray-100 focus:ring-2 focus:ring-blue-500'
+            }`}
             value={searchTerm}
             onChange={handleSearchChange}
           />
         </div>
 
-        {/* Advanced Search Butonu */}
-        <div className="flex gap-2">
+        {/* Advanced Search ve Filtreleme Butonları */}
+        <div className="flex gap-2 flex-wrap items-center">
           <button
             onClick={() => setUseAdvancedSearch(!useAdvancedSearch)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+            className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
               useAdvancedSearch 
-                ? 'bg-purple-600 text-white' 
+                ? 'bg-white text-purple-600 shadow-md' 
                 : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
             }`}
+            title={useAdvancedSearch ? "Normal arama moduna geç" : "Gelişmiş arama modunu aç"}
           >
             <TrendingUp className="w-4 h-4" />
-            Gelişmiş Arama
+            {useAdvancedSearch ? 'Normal Arama' : 'Gelişmiş Arama'}
           </button>
-          <button
-            onClick={() => setShowActivity(!showActivity)}
-            className={`flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
-              showActivity 
-                ? 'bg-cyan-600 text-white' 
-                : 'bg-cyan-50 text-cyan-600 hover:bg-cyan-100'
-            }`}
-          >
-            <Activity className="w-4 h-4" />
-            Son Aktivite
-          </button>
+          
+          {/* Filtreleme Dropdown - Sadece normal aramada */}
+          {!useAdvancedSearch && (
+            <div className="relative">
+              <button
+                onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
+                className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
+                  (showOnlyMyTools || statusFilter !== 'all')
+                    ? 'bg-blue-600 text-white shadow-md' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                }`}
+              >
+                <Filter className="w-4 h-4" />
+                Filtreleme
+                <ChevronDown className={`w-4 h-4 transition-transform ${filterDropdownOpen ? 'rotate-180' : ''}`} />
+              </button>
+              
+              {/* Dropdown Menu */}
+              {filterDropdownOpen && (
+                <>
+                  {/* Overlay to close dropdown */}
+                  <div 
+                    className="fixed inset-0 z-10" 
+                    onClick={() => setFilterDropdownOpen(false)}
+                  />
+                  
+                  <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-20 overflow-hidden">
+                    {/* Sahiplik Filtresi */}
+                    <div className="p-3 border-b border-gray-100">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Sahiplik</p>
+                      <div className="flex gap-2">
+                        <button
+                          onClick={() => setShowOnlyMyTools(false)}
+                          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            !showOnlyMyTools 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <Package className="w-4 h-4" />
+                          Tümü
+                        </button>
+                        <button
+                          onClick={() => setShowOnlyMyTools(true)}
+                          className={`flex-1 flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                            showOnlyMyTools 
+                              ? 'bg-blue-600 text-white' 
+                              : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+                          }`}
+                        >
+                          <UserIcon className="w-4 h-4" />
+                          Bana Ait
+                        </button>
+                      </div>
+                    </div>
+                    
+                    {/* Durum Filtresi */}
+                    <div className="p-3">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Durum</p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {STATUS_FILTERS.map(filter => {
+                          const isActive = statusFilter === filter.id;
+                          const colorClasses = {
+                            blue: isActive ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100',
+                            green: isActive ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100',
+                            orange: isActive ? 'bg-orange-500 text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-100',
+                            purple: isActive ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100',
+                          };
+                          return (
+                            <button
+                              key={filter.id}
+                              onClick={() => setStatusFilter(filter.id)}
+                              disabled={statusLoading}
+                              className={`flex items-center justify-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium transition-all ${
+                                colorClasses[filter.color as keyof typeof colorClasses]
+                              } ${statusLoading ? 'opacity-50' : ''}`}
+                            >
+                              {filter.icon}
+                              {filter.label}
+                            </button>
+                          );
+                        })}
+                      </div>
+                    </div>
+                    
+                    {/* Filtreleri Temizle */}
+                    {(showOnlyMyTools || statusFilter !== 'all') && (
+                      <div className="p-3 border-t border-gray-100">
+                        <button
+                          onClick={() => {
+                            setShowOnlyMyTools(false);
+                            setStatusFilter('all');
+                          }}
+                          className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-all"
+                        >
+                          <X className="w-4 h-4" />
+                          Filtreleri Temizle
+                        </button>
+                      </div>
+                    )}
+                  </div>
+                </>
+              )}
+            </div>
+          )}
+          
+          {/* Aktif filtre göstergesi */}
+          {!useAdvancedSearch && (showOnlyMyTools || statusFilter !== 'all') && (
+            <div className="flex gap-1.5 flex-wrap">
+              {showOnlyMyTools && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
+                  <UserIcon className="w-3 h-3" />
+                  Bana Ait
+                  <button onClick={() => setShowOnlyMyTools(false)} className="ml-0.5 hover:text-blue-900">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {statusFilter !== 'all' && (
+                <span className={`inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-full ${
+                  statusFilter === 'currently_available' ? 'bg-green-100 text-green-700' :
+                  statusFilter === 'currently_rented' ? 'bg-orange-100 text-orange-700' :
+                  'bg-purple-100 text-purple-700'
+                }`}>
+                  {STATUS_FILTERS.find(f => f.id === statusFilter)?.label}
+                  <button onClick={() => setStatusFilter('all')} className="ml-0.5 hover:opacity-70">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+            </div>
+          )}
         </div>
         
-        {/* Durum Filtreleri */}
-        <div className="flex items-center gap-2">
-          <Filter className="w-4 h-4 text-gray-400" />
-          <span className="text-sm text-gray-500 font-medium">Duruma Göre:</span>
-        </div>
-        <div className="flex gap-2 overflow-x-auto pb-2 scrollbar-hide">
-          {STATUS_FILTERS.map(filter => {
-            const isActive = statusFilter === filter.id;
-            const colorClasses = {
-              blue: isActive ? 'bg-blue-600 text-white' : 'bg-blue-50 text-blue-600 hover:bg-blue-100',
-              green: isActive ? 'bg-green-600 text-white' : 'bg-green-50 text-green-600 hover:bg-green-100',
-              orange: isActive ? 'bg-orange-500 text-white' : 'bg-orange-50 text-orange-600 hover:bg-orange-100',
-              purple: isActive ? 'bg-purple-600 text-white' : 'bg-purple-50 text-purple-600 hover:bg-purple-100',
-            };
-            return (
-              <button
-                key={filter.id}
-                onClick={() => setStatusFilter(filter.id)}
-                disabled={statusLoading}
-                className={`flex items-center gap-1.5 px-4 py-2 rounded-xl text-sm font-medium whitespace-nowrap transition-all ${
-                  colorClasses[filter.color as keyof typeof colorClasses]
-                } ${statusLoading ? 'opacity-50' : ''}`}
-              >
-                {filter.icon}
-                {filter.label}
-              </button>
-            );
-          })}
-        </div>
-
-        {/* Sonuç Sayısı */}
-        <div className="flex items-center justify-between text-sm">
-          <span className="text-gray-500">
-            {statusLoading ? (
-              <span className="flex items-center gap-2">
-                <span className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></span>
-                Yükleniyor...
-              </span>
-            ) : (
-              <span><strong>{filteredTools.length}</strong> alet bulundu</span>
-            )}
-          </span>
-        </div>
+        {/* Sonuç Sayısı - Sadece normal aramada */}
+        {!useAdvancedSearch && (
+          <div className="flex items-center justify-between text-sm">
+            <span className="text-gray-500">
+              {statusLoading ? (
+                <span className="flex items-center gap-2">
+                  <span className="animate-spin rounded-full h-4 w-4 border-2 border-blue-600 border-t-transparent"></span>
+                  Yükleniyor...
+                </span>
+              ) : (
+                <span><strong>{filteredTools.length}</strong> alet bulundu</span>
+              )}
+            </span>
+          </div>
+        )}
       </div>
 
-      {/* Gelişmiş Arama Sonuçları */}
-      {useAdvancedSearch && searchTerm && (
-        <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-4 rounded-2xl border border-purple-200">
-          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
+      {/* Gelişmiş Arama Sonuçları - Müsait Aletler */}
+      {useAdvancedSearch && (
+        <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-2xl border border-purple-200">
+          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-purple-600" />
             Müsait Aletler (Sonraki 30 Gün)
           </h3>
-          {advancedLoading ? (
-            <div className="flex items-center justify-center py-4">
-              <span className="animate-spin rounded-full h-5 w-5 border-2 border-purple-600 border-t-transparent mr-2"></span>
-              <span className="text-gray-600">Aranıyor...</span>
+          {!searchTerm ? (
+            <p className="text-gray-500 text-center py-8">
+              Müsait aletler arasında aramak için yukarıdaki arama kutusuna bir kelime yazın.
+            </p>
+          ) : advancedLoading ? (
+            <div className="flex items-center justify-center py-8">
+              <span className="animate-spin rounded-full h-6 w-6 border-2 border-purple-600 border-t-transparent mr-3"></span>
+              <span className="text-gray-600">Müsait aletler aranıyor...</span>
             </div>
           ) : advancedSearchResults.length > 0 ? (
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-              {advancedSearchResults.map(tool => (
-                <div key={tool.tool_id} className="bg-white p-3 rounded-xl">
-                  <p className="font-medium text-gray-800">{tool.tool_name}</p>
-                  <p className="text-sm text-gray-600">{tool.owner_name}</p>
-                  <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
-                    {/* <span>İlk Müsait: {new Date(tool.first_available_date).toLocaleDateString('tr-TR')}</span> */}
-                    {/* <span className="bg-green-100 text-green-700 px-2 py-1 rounded">{tool.availability_gap_days} gün</span> */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+              {advancedSearchResults.map(tool => {
+                const isOwnTool = tool.owner_id === currentUserId;
+                return (
+                  <div key={tool.tool_id} className="bg-white p-4 rounded-xl shadow-sm hover:shadow-md transition-shadow">
+                    <p className="font-semibold text-gray-800">{tool.tool_name}</p>
+                    <p className="text-sm text-gray-500 mt-1">{tool.owner_name}</p>
+                    {tool.category_name && (
+                      <span className="inline-block mt-2 text-xs bg-purple-100 text-purple-700 px-2 py-0.5 rounded">
+                        {tool.category_name}
+                      </span>
+                    )}
+                    <button
+                      onClick={() => {
+                        if (!isOwnTool) {
+                          // AvailableToolSearch'ü Tool formatına dönüştür
+                          const convertedTool: Tool = {
+                            tool_id: tool.tool_id,
+                            tool_name: tool.tool_name,
+                            user_id: tool.owner_id,
+                            category_id: null,
+                            created_at: new Date().toISOString(),
+                          };
+                          setSelectedTool(convertedTool);
+                        }
+                      }}
+                      disabled={isOwnTool}
+                      className={`w-full mt-3 py-2 rounded-xl text-sm font-semibold transition-colors ${
+                        isOwnTool
+                          ? 'bg-gray-300 text-gray-500 cursor-not-allowed'
+                          : 'bg-purple-600 text-white hover:bg-purple-700'
+                      }`}
+                    >
+                      {isOwnTool ? 'Senin Aletin' : 'Kirala'}
+                    </button>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           ) : (
-            <p className="text-gray-600 text-center py-4">Arama kriterine uygun müsait alet bulunmadı.</p>
+            <p className="text-gray-600 text-center py-8">
+              "{searchTerm}" aramasına uygun müsait alet bulunmadı.
+            </p>
           )}
         </div>
       )}
 
-      {/* Son Aktivite Widget */}
-      {showActivity && (
-        <div className="bg-gradient-to-r from-cyan-50 to-blue-50 p-4 rounded-2xl border border-cyan-200">
-          <h3 className="font-bold text-gray-800 mb-3 flex items-center gap-2">
-            <Activity className="w-5 h-5 text-cyan-600" />
-            Platformdaki Son Aktiviteler
-          </h3>
-          {recentActivity.length > 0 ? (
-            <div className="space-y-3">
-              {recentActivity.map(activity => (
-                <div key={activity.reservation_id} className="bg-white p-3 rounded-xl flex items-center gap-3">
-                  <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-800">
-                      <span className="text-blue-600 font-semibold">{activity.borrower_name}</span> tarafından{' '}
-                      <span className="text-blue-600 font-semibold">{activity.tool_name}</span> kiralandı
-                    </p>
-                    <p className="text-xs text-gray-500 mt-1">
-                      {new Date(activity.start_t).toLocaleDateString('tr-TR')} - {new Date(activity.end_t).toLocaleDateString('tr-TR')}
-                    </p>
-                  </div>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <p className="text-gray-600 text-center py-4">Son aktivite bulunmadı.</p>
-          )}
-        </div>
-      )}
-
-      {/* İlan Listesi */}
+      {/* İlan Listesi - Sadece normal aramada */}
+      {!useAdvancedSearch && (
+      <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         {filteredTools.map(tool => {
           // Filtered data'dan owner bilgisi al (API zaten döndürüyor)
@@ -435,9 +543,13 @@ export default function Marketplace({
                 </div>
               </div>
 
-              {/* Tool Görseli (Placeholder) */}
-              <div className="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 flex items-center justify-center">
-                <Wrench className="w-16 h-16 text-gray-300" />
+              {/* Tool Görseli */}
+              <div className="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
+                <img 
+                  src={placeholderImages[tool.tool_id % placeholderImages.length]} 
+                  alt={tool.tool_name}
+                  className="w-full h-full object-cover"
+                />
                 <div className="absolute bottom-3 left-3 bg-black/60 text-white px-2 py-1 rounded-md text-xs backdrop-blur-sm">
                   #{tool.tool_id}
                 </div>
@@ -495,6 +607,8 @@ export default function Marketplace({
           <Hammer className="w-12 h-12 mx-auto mb-3 opacity-20" />
           <p>Aradığınız kriterlere uygun alet bulunamadı.</p>
         </div>
+      )}
+      </>
       )}
     </div>
   );
