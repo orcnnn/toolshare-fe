@@ -93,9 +93,34 @@ export default function Marketplace({
     performAdvancedSearch();
   }, [searchTerm, useAdvancedSearch]);
 
-  // Durum bilgisini yükle (API zaten owner bilgisini döndürüyor)
+  // Durum bilgisini yükle - sessionStorage cache ile
   useEffect(() => {
     const loadToolsByStatus = async () => {
+      // Cache key oluştur
+      const cacheKey = `marketplace_status_${statusFilter}`;
+      const cacheTimeKey = `marketplace_status_time_${statusFilter}`;
+      
+      // Cache kontrolü
+      const cachedData = sessionStorage.getItem(cacheKey);
+      const cacheTime = sessionStorage.getItem(cacheTimeKey);
+      
+      // Cache 2 dakikadan yeni ise kullan (marketplace daha sık güncellenmeli)
+      if (cachedData && cacheTime) {
+        const cacheAge = Date.now() - parseInt(cacheTime);
+        if (cacheAge < 2 * 60 * 1000) { // 2 dakika
+          const data = JSON.parse(cachedData);
+          setFilteredByStatus(data);
+          
+          const statusMap: Record<number, ToolWithStatus> = {};
+          data.forEach((tool: ToolWithStatus) => {
+            statusMap[tool.tool_id] = tool;
+          });
+          setToolStatuses(prev => ({ ...prev, ...statusMap }));
+          setStatusLoading(false);
+          return;
+        }
+      }
+
       setStatusLoading(true);
       try {
         const data = await toolApi.getByStatus(statusFilter);
@@ -107,6 +132,10 @@ export default function Marketplace({
           statusMap[tool.tool_id] = tool;
         });
         setToolStatuses(prev => ({ ...prev, ...statusMap }));
+        
+        // SessionStorage'a kaydet
+        sessionStorage.setItem(cacheKey, JSON.stringify(data));
+        sessionStorage.setItem(cacheTimeKey, Date.now().toString());
       } catch (err) {
         console.error('Durum filtreleme hatası:', err);
       } finally {
@@ -117,15 +146,25 @@ export default function Marketplace({
     loadToolsByStatus();
   }, [statusFilter]);
 
-  // Props'tan gelen tools için sahipleri yükle (ilk yükleme)
+  // Props'tan gelen tools için sahipleri yükle - sessionStorage cache ile
   useEffect(() => {
     const loadOwners = async () => {
+      // Önce sessionStorage'dan cache'i yükle
+      const cachedOwners = sessionStorage.getItem('marketplace_owners_cache');
+      let existingOwners: OwnerCache = cachedOwners ? JSON.parse(cachedOwners) : {};
+      
+      // State'i cache ile başlat
+      if (Object.keys(existingOwners).length > 0 && Object.keys(owners).length === 0) {
+        setOwners(existingOwners);
+      }
+      
       const uniqueUserIds = [...new Set(tools.map(t => t.user_id))];
       const newOwners: OwnerCache = {};
       
       await Promise.all(
         uniqueUserIds.map(async (userId) => {
-          if (!owners[userId]) {
+          // Hem state'te hem cache'te yoksa çek
+          if (!owners[userId] && !existingOwners[userId]) {
             try {
               const user = await userApi.getById(userId);
               newOwners[userId] = user;
@@ -137,7 +176,12 @@ export default function Marketplace({
       );
       
       if (Object.keys(newOwners).length > 0) {
-        setOwners(prev => ({ ...prev, ...newOwners }));
+        setOwners(prev => {
+          const updated = { ...prev, ...newOwners };
+          // SessionStorage'a kaydet
+          sessionStorage.setItem('marketplace_owners_cache', JSON.stringify(updated));
+          return updated;
+        });
       }
     };
 

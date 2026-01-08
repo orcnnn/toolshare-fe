@@ -116,9 +116,9 @@ export default function App() {
     loadUserData();
   }, [currentUser]);
 
-  // Son aktiviteleri yükle
+  // Son aktiviteleri yükle - sadece panel açıldığında
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser || !activitySidebarOpen) return;
 
     const loadRecentActivity = async () => {
       setActivityLoading(true);
@@ -133,10 +133,7 @@ export default function App() {
     };
 
     loadRecentActivity();
-    // Her 30 saniyede bir güncelle
-    const interval = setInterval(loadRecentActivity, 30000);
-    return () => clearInterval(interval);
-  }, [currentUser]);
+  }, [currentUser, activitySidebarOpen]);
 
   // Sayfa değiştiğinde aktivite panelini kapat ve tab'ı kaydet
   useEffect(() => {

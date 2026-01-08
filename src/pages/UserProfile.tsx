@@ -19,14 +19,33 @@ export default function UserProfile({ user, userTools, userReservations, loading
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
 
-  // Alet performans verilerini yükle
+  // Alet performans verilerini yükle - sessionStorage cache ile
   useEffect(() => {
     if (!user) return;
 
     const loadPerformance = async () => {
+      // Cache kontrolü
+      const cacheKey = `profile_performance_${user.user_id}`;
+      const cacheTimeKey = `profile_performance_time_${user.user_id}`;
+      const cachedData = sessionStorage.getItem(cacheKey);
+      const cacheTime = sessionStorage.getItem(cacheTimeKey);
+      
+      // Cache 5 dakikadan yeni ise kullan
+      if (cachedData && cacheTime) {
+        const cacheAge = Date.now() - parseInt(cacheTime);
+        if (cacheAge < 5 * 60 * 1000) { // 5 dakika
+          setLenderPerformance(JSON.parse(cachedData));
+          return;
+        }
+      }
+
       try {
         const performance = await analyticsApi.getLenderPerformance(user.user_id, 5);
         setLenderPerformance(performance);
+        
+        // Cache'e kaydet
+        sessionStorage.setItem(cacheKey, JSON.stringify(performance));
+        sessionStorage.setItem(cacheTimeKey, Date.now().toString());
       } catch (err) {
         console.error('Performans yükleme hatası:', err);
       }
