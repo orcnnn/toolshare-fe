@@ -101,9 +101,28 @@ export default function AdminDashboard() {
 
   // --- 1. ADIM: Veri Çekme Fonksiyonunu Dışarı Alıyoruz ---
   // Böylece hem sayfa açılınca hem de silme işleminden sonra çağırabiliriz.
-  const fetchDashboardData = async () => {
-    // İlk yüklemede loading gösterelim, ama yenilemelerde tüm sayfayı dondurmayabiliriz
-    // İsteğe bağlı: setLoading(true); 
+  const fetchDashboardData = async (forceRefresh = false) => {
+    // Önce cache'i kontrol et (force değilse)
+    if (!forceRefresh) {
+      const cachedData = sessionStorage.getItem('admin_dashboard_cache');
+      const cacheTime = sessionStorage.getItem('admin_dashboard_cache_time');
+      
+      // Cache 5 dakikadan yeni ise kullan
+      if (cachedData && cacheTime) {
+        const cacheAge = Date.now() - parseInt(cacheTime);
+        if (cacheAge < 5 * 60 * 1000) { // 5 dakika
+          const parsed = JSON.parse(cachedData);
+          setSummary(parsed.summary);
+          setActiveUsers(parsed.activeUsers || []);
+          setDualRoleUsers(parsed.dualRoleUsers || []);
+          setLendersOnly(parsed.lendersOnly || []);
+          setRecentReservations(parsed.recentReservations || []);
+          setLoading(false);
+          return;
+        }
+      }
+    }
+
     try {
       const [summaryData, usersData, dualRoleData, lendersOnlyData, reservationsData] = await Promise.all([
         statisticsApi.getSystemSummary(),
@@ -117,6 +136,16 @@ export default function AdminDashboard() {
       setDualRoleUsers(dualRoleData);
       setLendersOnly(lendersOnlyData);
       setRecentReservations(reservationsData);
+      
+      // Cache'e kaydet
+      sessionStorage.setItem('admin_dashboard_cache', JSON.stringify({
+        summary: summaryData,
+        activeUsers: usersData,
+        dualRoleUsers: dualRoleData,
+        lendersOnly: lendersOnlyData,
+        recentReservations: reservationsData,
+      }));
+      sessionStorage.setItem('admin_dashboard_cache_time', Date.now().toString());
     } catch (err) {
       console.error('Admin dashboard veri yükleme hatası:', err);
     } finally {
@@ -147,7 +176,8 @@ export default function AdminDashboard() {
       // --- 2. ADIM: SORUNUN ÇÖZÜMÜ ---
       // onUserDeleted() yerine kendi veri çekme fonksiyonumuzu çağırıyoruz.
       // Bu sayede listeler güncel haliyle tekrar ekrana gelir.
-      await fetchDashboardData(); 
+      // forceRefresh=true ile cache'i bypass ediyoruz
+      await fetchDashboardData(true); 
       
       // --- DEĞİŞİKLİK: Alert yerine Toast çağırıyoruz ---
       showToast(`Kullanıcı (ID: ${deleteInputId}) başarıyla silindi.`, 'success');

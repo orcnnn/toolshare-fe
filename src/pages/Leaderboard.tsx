@@ -30,9 +30,26 @@ export default function Leaderboard() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'top' | 'active' | 'dual'>('top');
 
-  // Verileri yükle
+  // Verileri yükle - sessionStorage cache ile
   useEffect(() => {
     const loadLeaderboardData = async () => {
+      // Önce cache'i kontrol et
+      const cachedData = sessionStorage.getItem('leaderboard_cache');
+      const cacheTime = sessionStorage.getItem('leaderboard_cache_time');
+      
+      // Cache 5 dakikadan yeni ise kullan
+      if (cachedData && cacheTime) {
+        const cacheAge = Date.now() - parseInt(cacheTime);
+        if (cacheAge < 5 * 60 * 1000) { // 5 dakika
+          const parsed = JSON.parse(cachedData);
+          setTopUsers(parsed.topUsers || []);
+          setAllActiveUsers(parsed.allActiveUsers || []);
+          setDualRoleUsers(parsed.dualRoleUsers || []);
+          setLoading(false);
+          return;
+        }
+      }
+
       setLoading(true);
       setError(null);
       try {
@@ -53,6 +70,14 @@ export default function Leaderboard() {
         setTopUsers(top || []);
         setAllActiveUsers(active || []);
         setDualRoleUsers(dual || []);
+        
+        // Cache'e kaydet
+        sessionStorage.setItem('leaderboard_cache', JSON.stringify({
+          topUsers: top || [],
+          allActiveUsers: active || [],
+          dualRoleUsers: dual || [],
+        }));
+        sessionStorage.setItem('leaderboard_cache_time', Date.now().toString());
       } catch (err) {
         console.error('Leaderboard verisi yükleme hatası:', err);
         setError('Liderlik tablosu verileri yüklenemedi');
