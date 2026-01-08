@@ -1,5 +1,5 @@
 // src/services/api.ts
-const API_BASE_URL = 'http://localhost:8001';
+export const API_BASE_URL = 'http://localhost:8001';
 
 // --- Types (Backend schemas.py'den alınmıştır) ---
 export interface User {
@@ -155,29 +155,31 @@ export interface AvailableToolSearch {
 }
 
 export interface LendingPerformance {
-  tool_id: number;
-  tool_name: string;
-  total_lends: number;
-  avg_rating: number;
-  five_star_count: number;
-  four_star_count: number;
-  three_star_count: number;
-  two_star_count: number;
-  one_star_count: number;
+  total_tools_owned: number
+  total_times_lent: number
+  active_loans: number
+  completed_loans: number
+  avg_rating: number
+  five_star_reviews: number
+  four_star_reviews: number
+  three_star_reviews: number
+  two_star_reviews: number
+  one_star_reviews: number
+  total_reviews: number
+  days_analyzed: number
 }
 
 // --- Views Types ---
 export interface RecentReservationView {
-  reservation_id: number;
-  tool_id: number;
-  tool_name: string;
-  borrower_id: number;
-  borrower_name: string;
-  owner_id: number;
-  owner_name: string;
-  start_t: string;
-  end_t: string;
-  created_at: string;
+  reservation_id: number
+  borrower_name: string
+  owner_name: string
+  tool_name: string
+  start_t: string
+  end_t: string
+  
+  duration: string
+  status: string
 }
 
 export interface UserActivityView {

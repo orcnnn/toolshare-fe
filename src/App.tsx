@@ -143,9 +143,9 @@ export default function App() {
       
       triggerNotification(`${tool.tool_name} için rezervasyon kaydedildi!`);
     } catch (err) {
-      const errorMessage = err instanceof Error ? err.message : 'Rezervasyon oluşturulamadı';
-      triggerNotification(errorMessage, 'error');
-      throw err; // Modal'ın hata durumunu görebilmesi için
+      const errorMessage = err instanceof Error ? err.message : 'Rezervasyon yapılırken bir hata oluştu';
+      triggerNotification(errorMessage.toString(), 'error');
+      //throw err; // Modal'ın hata durumunu görebilmesi için
     }
   };
 
