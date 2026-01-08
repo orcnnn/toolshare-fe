@@ -546,7 +546,7 @@ export default function AdminDashboard() {
               return (
                 <div 
                   key={user.user_id} 
-                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group"
                 >
                   <div className="flex items-center gap-3">
                     <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center text-white font-bold text-sm ${
@@ -563,7 +563,7 @@ export default function AdminDashboard() {
                       <span className="text-xs text-gray-400">#{user.user_id}</span>
                     </div>
                   </div>
-                  <div className="flex gap-1">
+                  <div className="flex items-center gap-2">
                      {hasBothRoles ? (
                         <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-purple-100 text-purple-700 border border-purple-200">Çift Rol</span>
                      ) : user.isLender ? (
@@ -571,6 +571,17 @@ export default function AdminDashboard() {
                      ) : (
                         <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-blue-100 text-blue-700 border border-blue-200">Alan</span>
                      )}
+                     {/* Silme Butonu */}
+                     <button
+                       onClick={() => {
+                         setDeleteInputId(user.user_id.toString());
+                         setIsDeleteModalOpen(true);
+                       }}
+                       className="opacity-0 group-hover:opacity-100 p-1.5 text-red-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-all"
+                       title={`${user.user_name} kullanıcısını sil`}
+                     >
+                       <Trash2 className="w-4 h-4" />
+                     </button>
                   </div>
                 </div>
               );

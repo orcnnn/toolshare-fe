@@ -1,7 +1,7 @@
 // src/pages/Reservations.tsx
 import React, { useEffect, useState } from 'react';
 import { Calendar, Wrench, Clock, CheckCircle, XCircle, Star } from 'lucide-react';
-import { Reservation, Tool, toolApi, userApi } from '../services/api';
+import { Reservation, Tool, toolApi, userApi, reservationApi } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
 
 // Props arayüzü
@@ -9,6 +9,7 @@ interface ReservationsProps {
   reservations: Reservation[];
   loading?: boolean;
   currentUserId?: number;
+  onReservationFinished?: (reservation: Reservation) => void;
 }
 
 // Tool cache'i için tip
@@ -23,7 +24,7 @@ interface ReviewModalState {
   ownerId: number;
 }
 
-export default function Reservations({ reservations, loading = false, currentUserId }: ReservationsProps) {
+export default function Reservations({ reservations, loading = false, currentUserId, onReservationFinished }: ReservationsProps) {
   const [tools, setTools] = useState<ToolCache>({});
   // reservation_id -> score mapping
   const [reviewedReservations, setReviewedReservations] = useState<Map<number, number>>(new Map());
@@ -34,6 +35,8 @@ export default function Reservations({ reservations, loading = false, currentUse
     ownerName: '',
     ownerId: 0,
   });
+  // Tamamlama işlemi için loading state
+  const [finishingReservation, setFinishingReservation] = useState<number | null>(null);
 
   // Kullanıcının yaptığı değerlendirmeleri yükle
   useEffect(() => {
@@ -74,6 +77,20 @@ export default function Reservations({ reservations, loading = false, currentUse
   // Review başarılı olduğunda
   const handleReviewSuccess = (score: number) => {
     setReviewedReservations(prev => new Map(prev).set(reviewModal.reservationId, score));
+  };
+
+  // Rezervasyonu erken tamamla
+  const handleFinishReservation = async (reservationId: number) => {
+    setFinishingReservation(reservationId);
+    try {
+      const updatedReservation = await reservationApi.finish(reservationId);
+      onReservationFinished?.(updatedReservation);
+    } catch (err) {
+      console.error('Rezervasyon tamamlama hatası:', err);
+      alert('Rezervasyon tamamlanırken bir hata oluştu.');
+    } finally {
+      setFinishingReservation(null);
+    }
   };
 
   // Rezervasyonlardaki tool bilgilerini yükle
@@ -207,6 +224,27 @@ export default function Reservations({ reservations, loading = false, currentUse
                 <p className="text-xs text-gray-400 mt-2">
                   Oluşturuldu: {new Date(reservation.created_at).toLocaleDateString('tr-TR')}
                 </p>
+
+                {/* Tamamla Butonu - Aktif veya Beklemede rezervasyonlar için */}
+                {(status.label === 'Aktif' || status.label === 'Beklemede') && (
+                  <button
+                    onClick={() => handleFinishReservation(reservation.reservation_id)}
+                    disabled={finishingReservation === reservation.reservation_id}
+                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                  >
+                    {finishingReservation === reservation.reservation_id ? (
+                      <>
+                        <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                        Tamamlanıyor...
+                      </>
+                    ) : (
+                      <>
+                        <CheckCircle className="w-4 h-4" />
+                        Tamamla
+                      </>
+                    )}
+                  </button>
+                )}
 
                 {/* Değerlendirme Butonu - Tamamlanmış rezervasyonlar için */}
                 {status.label === 'Tamamlandı' && tool && !reviewedReservations.has(reservation.reservation_id) && (
