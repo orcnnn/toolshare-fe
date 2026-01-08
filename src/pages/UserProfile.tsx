@@ -76,23 +76,7 @@ export default function UserProfile({ user, userTools, userReservations, loading
           </div>
         </div>
 
-        <div className="grid grid-cols-3 gap-4 bg-white/10 rounded-2xl p-4 backdrop-blur-sm">
-          <div className="text-center border-r border-white/10">
-            <div className="text-3xl font-bold flex items-center justify-center gap-1">
-              {user.avg_scr.toFixed(1)} 
-              <Star className="w-5 h-5 text-yellow-400 fill-yellow-400" />
-            </div>
-            <div className="text-xs text-blue-200 mt-1">Güvenlik Skoru</div>
-          </div>
-          <div className="text-center border-r border-white/10">
-            <div className="text-3xl font-bold">{userTools.length}</div>
-            <div className="text-xs text-blue-200 mt-1">Paylaşılan Alet</div>
-          </div>
-          <div className="text-center">
-            <div className="text-3xl font-bold">{user.rev_cnt}</div>
-            <div className="text-xs text-blue-200 mt-1">Değerlendirme</div>
-          </div>
-        </div>
+        
       </div>
 
       {/* Muhtar Paneli Butonu - Sadece Admin için */}
@@ -145,57 +129,49 @@ export default function UserProfile({ user, userTools, userReservations, loading
         <div className="bg-white rounded-2xl shadow-sm p-5">
           <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
             <TrendingUp className="w-5 h-5 text-purple-600" />
-            Aletlerim Performansı
+            Performansım
           </h3>
           <div className="space-y-4">
             {lenderPerformance.slice(0, 5).map(perf => {
-              // Yüzdelik hesapla (5 yıldız oranı)
-              const fiveStarPercentage = perf.total_lends > 0 
-                ? Math.round((perf.five_star_count / perf.total_lends) * 100) 
-                : 0;
-              
               return (
-                <div key={perf.tool_id} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
-                  {/* Alet Adı ve Puan */}
+                <div key={perf.avg_rating} className="bg-gradient-to-r from-purple-50 to-indigo-50 rounded-xl p-4 border border-purple-100">
                   <div className="flex items-center justify-between mb-3">
-                    <div className="flex items-center gap-3">
-                      <div className="w-10 h-10 bg-purple-100 rounded-lg flex items-center justify-center">
-                        <Wrench className="w-5 h-5 text-purple-600" />
-                      </div>
-                      <span className="font-semibold text-gray-800">{perf.tool_name}</span>
-                    </div>
-                    <div className="flex items-center gap-1 bg-yellow-100 px-3 py-1.5 rounded-full">
-                      <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
-                      <span className="font-bold text-yellow-700">{perf.avg_rating.toFixed(1)}</span>
-                    </div>
+                  {/* Sol Taraf: Başlık */}
+                  <span className="text-sm font-medium text-gray-600">Ortalama Değerlendirme</span>
+
+                  {/* Sağ Taraf: Puan Rozeti */}
+                  <div className="flex items-center gap-1 bg-yellow-100 px-3 py-1.5 rounded-full">
+                    <Star className="w-4 h-4 text-yellow-500 fill-yellow-500" />
+                    <span className="font-bold text-yellow-700">{perf.avg_rating.toFixed(1)}</span>
                   </div>
-                  
+                </div>
                   {/* İstatistikler */}
                   <div className="grid grid-cols-3 gap-3">
                     <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                      <div className="text-2xl font-bold text-purple-600">{perf.total_lends}</div>
+                      <div className="text-2xl font-bold text-purple-600">{perf.completed_loans}</div>
                       <div className="text-xs text-gray-500 mt-1">Toplam Kiralama</div>
                     </div>
                     <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                      <div className="text-2xl font-bold text-green-600">{perf.five_star_count}</div>
-                      <div className="text-xs text-gray-500 mt-1">5 Yıldız</div>
+                      <div className="text-2xl font-bold text-blue-600">{perf.total_reviews}</div>
+                      <div className="text-xs text-gray-500 mt-1">Toplam Alınan İnceleme</div>
                     </div>
                     <div className="bg-white rounded-lg p-3 text-center shadow-sm">
-                      <div className="text-2xl font-bold text-blue-600">%{fiveStarPercentage}</div>
-                      <div className="text-xs text-gray-500 mt-1">Memnuniyet</div>
+                      <div className="text-2xl font-bold text-green-600">{perf.five_star_reviews}</div>
+                      <div className="text-xs text-gray-500 mt-1">5 Yıldız Sayısı</div>
                     </div>
+                    
                   </div>
                   
                   {/* Progress Bar */}
                   <div className="mt-3">
                     <div className="flex justify-between text-xs text-gray-500 mb-1">
-                      <span>Memnuniyet Oranı</span>
-                      <span className="font-medium text-green-600">{fiveStarPercentage}%</span>
+                      <span>Güvenilirlik Oranı</span>
+                      <span className="font-medium text-green-600">{perf.avg_rating * 20}%</span>
                     </div>
                     <div className="h-2 bg-gray-200 rounded-full overflow-hidden">
                       <div 
                         className="h-full bg-gradient-to-r from-green-400 to-emerald-500 rounded-full transition-all duration-500"
-                        style={{ width: `${fiveStarPercentage}%` }}
+                        style={{ width: `${perf.avg_rating * 20}%` }}
                       />
                     </div>
                   </div>
@@ -212,14 +188,6 @@ export default function UserProfile({ user, userTools, userReservations, loading
           icon={<ShieldCheck className="text-green-500" />} 
           label="Kimlik Doğrulama" 
           status="Doğrulandı" 
-        />
-        <ProfileMenuItem 
-          icon={<Star className="text-yellow-500" />} 
-          label="Değerlendirmelerim" 
-        />
-        <ProfileMenuItem 
-          icon={<Clock className="text-blue-500" />} 
-          label="Geçmiş Kiralamalar" 
         />
         <ProfileMenuItem 
           icon={<UserIcon className="text-purple-500" />} 

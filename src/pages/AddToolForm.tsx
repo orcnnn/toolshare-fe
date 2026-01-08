@@ -3,16 +3,30 @@ import React, { useState, ChangeEvent, FormEvent } from 'react';
 import { X, Wrench, AlertCircle } from 'lucide-react';
 import { Tool, ToolCreate, toolApi } from '../services/api';
 
+import { ChevronDown } from 'lucide-react';
+
 interface AddToolFormProps {
   userId: number; // Aktif kullanıcı ID'si
   onAdd: (newTool: Tool) => void;
   onCancel: () => void;
 }
 
+// SQL verisinden alınan sabit kategoriler
+const CATEGORIES = [
+  { id: 1, name: 'Elektrikli Aletler' },
+  { id: 2, name: 'El Aletleri' },
+  { id: 3, name: 'Ölçüm Aletleri' },
+  { id: 4, name: 'Boya & Dekorasyon' },
+  { id: 5, name: 'Pnömatik Aletler' },
+  { id: 6, name: 'Genel Ekipman' }
+];
+
 export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProps) {
   const [toolName, setToolName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
+
+  const [selectedCategoryId, setSelectedCategoryId] = useState("");
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -21,7 +35,6 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
       setError('Lütfen alet adı girin');
       return;
     }
-
     setIsSubmitting(true);
     setError(null);
 
@@ -43,6 +56,12 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
   const handleChange = (e: ChangeEvent<HTMLInputElement>) => {
     setToolName(e.target.value);
     if (error) setError(null);
+  };
+
+  
+  const handleChangeCatagory = (e: { target: { value: React.SetStateAction<string>; }; }) => {
+    setSelectedCategoryId(e.target.value);
+    console.log("Seçilen Kategori ID:", e.target.value);
   };
 
   return (
@@ -99,11 +118,43 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
         </div>
 
         {/* Kullanıcı Bilgisi */}
-        <div className="bg-gray-50 rounded-xl p-4">
-          <p className="text-xs text-gray-500">
-            <span className="font-medium">Sahip ID:</span> {userId}
+        <div>
+          <label className="block text-sm font-medium text-gray-700 mb-1">
+            Kategori <span className="text-red-500">*</span>
+          </label>
+          
+          <div className="relative">
+            <select
+              required
+              name="category_id"
+              value={selectedCategoryId}
+              onChange={handleChangeCatagory}
+              disabled={isSubmitting}
+              className="w-full p-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
+            >
+              <option value="" disabled className="text-gray-400">
+                Kategori Seçiniz
+              </option>
+              {/* Mock Datadan Gelen Kategoriler */}
+              <option value="1">Elektrikli Aletler</option>
+              <option value="2">El Aletleri</option>
+              <option value="3">Ölçüm Aletleri</option>
+              <option value="4">Boya & Dekorasyon</option>
+              <option value="5">Pnömatik Aletler</option>
+              <option value="6">Genel Ekipman</option>
+            </select>
+
+            {/* Özel Aşağı Ok İkonu */}
+            <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
+              <ChevronDown size={20} />
+            </div>
+          </div>
+          
+          <p className="text-xs text-gray-400 mt-1">
+            Aletinizin doğru bulunabilmesi için en uygun kategoriyi seçin.
           </p>
         </div>
+
 
         <div className="pt-4">
           <button 

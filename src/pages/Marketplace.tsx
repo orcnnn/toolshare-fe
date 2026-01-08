@@ -387,8 +387,6 @@ export default function Marketplace({
                       <span className="text-blue-600 font-semibold">{activity.tool_name}</span> kiralandı
                     </p>
                     <p className="text-xs text-gray-500 mt-1">
-                      {new Date(activity.created_at).toLocaleDateString('tr-TR')} 
-                      {' • '} 
                       {new Date(activity.start_t).toLocaleDateString('tr-TR')} - {new Date(activity.end_t).toLocaleDateString('tr-TR')}
                     </p>
                   </div>

@@ -1,14 +1,17 @@
 // src/pages/AdminDashboard.tsx
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useMemo } from 'react';
 import { 
   Crown, Users, Wrench, Calendar, Star, TrendingUp, 
-  Activity, Shield, AlertTriangle, CheckCircle2,
+  Activity, Shield, AlertTriangle, CheckCircle2,CheckCircle, AlertCircle,
   ArrowUpRight, ArrowDownRight, Zap, Database, Layers, GitMerge, GitBranch
 } from 'lucide-react';
+
+import { Trash2, X, Loader2 } from 'lucide-react';
 import { PieChart, Pie, Cell, ResponsiveContainer, Tooltip, Legend } from 'recharts';
 import { 
   statisticsApi, 
   viewsApi,
+  userApi,
   SystemStatisticsSummary, 
   AllActiveUsersStats,
   DualRoleUsersStats,
@@ -16,8 +19,15 @@ import {
   RecentReservationView 
 } from '../services/api';
 
+import { API_BASE_URL } from '../services/api.ts'; // Dosya yoluna dikkat et!
+
 // Tab tipi
 type SetOperationTab = 'overview' | 'union' | 'intersect' | 'except';
+
+interface ToastNotification {
+  message: string;
+  type: 'success' | 'error';
+}
 
 export default function AdminDashboard() {
   const [summary, setSummary] = useState<SystemStatisticsSummary | null>(null);
@@ -28,31 +38,127 @@ export default function AdminDashboard() {
   const [loading, setLoading] = useState(true);
   const [activeSetTab, setActiveSetTab] = useState<SetOperationTab>('overview');
 
-  useEffect(() => {
-    const loadData = async () => {
-      setLoading(true);
-      try {
-        const [summaryData, usersData, dualRoleData, lendersOnlyData, reservationsData] = await Promise.all([
-          statisticsApi.getSystemSummary(),
-          statisticsApi.getAllActiveUsers(),
-          statisticsApi.getDualRoleUsers(),
-          statisticsApi.getLendersOnly(),
-          viewsApi.getRecentReservations(),
-        ]);
-        setSummary(summaryData);
-        setActiveUsers(usersData);
-        setDualRoleUsers(dualRoleData);
-        setLendersOnly(lendersOnlyData);
-        setRecentReservations(reservationsData);
-      } catch (err) {
-        console.error('Admin dashboard veri yükleme hatası:', err);
-      } finally {
-        setLoading(false);
-      }
-    };
+  // --- STATE'LER ---
+  const [isDeleteModalOpen, setIsDeleteModalOpen] = useState(false);
+  const [deleteInputId, setDeleteInputId] = useState("");
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [deleteError, setDeleteError] = useState(null);
 
-    loadData();
+
+  // Burada <ToastNotification | null> diyerek TypeScript'e 
+  // "Bu kutuya ya null koyacağım ya da mesaj objesi koyacağım" diyoruz.
+  const [toast, setToast] = useState<ToastNotification | null>(null);
+
+  // showToast fonksiyonunda 'type' parametresini de kısıtlayabiliriz (Opsiyonel ama iyi olur)
+  const showToast = (message: string, type: 'success' | 'error' = 'success') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 3000);
+  };
+
+  const userToBeDeleted = activeUsers.find(
+    (u) => u.user_id === Number(deleteInputId)
+  );
+
+
+  // Sayfada kaç kişi gösterileceği (Başlangıç: 10)
+  const [visibleCount, setVisibleCount] = useState(10);
+
+  // 1. ADIM: Veriyi render öncesi tekilleştiriyoruz (Performans için useMemo şart)
+  const uniqueUserList = useMemo(() => {
+    const userMap = new Map();
+
+    activeUsers.forEach(user => {
+      const existing = userMap.get(user.user_id);
+      if (existing) {
+        if (user.activity_type === 'Borrower') existing.isBorrower = true;
+        if (user.activity_type === 'Lender') existing.isLender = true;
+      } else {
+        userMap.set(user.user_id, {
+          user_id: user.user_id, // ID'yi de objeye ekleyelim
+          user_name: user.user_name,
+          isBorrower: user.activity_type === 'Borrower',
+          isLender: user.activity_type === 'Lender',
+        });
+      }
+    });
+
+    return Array.from(userMap.values());
+  }, [activeUsers]);
+
+  // 2. ADIM: Scroll olayını yakalayan fonksiyon
+  // Tip tanımlaması eklendi: (e: React.UIEvent<HTMLDivElement>)
+  const handleScroll = (e: React.UIEvent<HTMLDivElement>) => {
+      const { scrollTop, clientHeight, scrollHeight } = e.currentTarget;
+      
+      // Listenin en altına yaklaşıldıysa (50px tolerans)
+      if (scrollHeight - scrollTop <= clientHeight + 50) {
+        // Eğer gösterilen sayı toplamdan azsa, 10 tane daha ekle
+        if (visibleCount < uniqueUserList.length) {
+          setVisibleCount((prev) => prev + 10);
+        }
+      }
+  };
+
+  // --- 1. ADIM: Veri Çekme Fonksiyonunu Dışarı Alıyoruz ---
+  // Böylece hem sayfa açılınca hem de silme işleminden sonra çağırabiliriz.
+  const fetchDashboardData = async () => {
+    // İlk yüklemede loading gösterelim, ama yenilemelerde tüm sayfayı dondurmayabiliriz
+    // İsteğe bağlı: setLoading(true); 
+    try {
+      const [summaryData, usersData, dualRoleData, lendersOnlyData, reservationsData] = await Promise.all([
+        statisticsApi.getSystemSummary(),
+        statisticsApi.getAllActiveUsers(),
+        statisticsApi.getDualRoleUsers(),
+        statisticsApi.getLendersOnly(),
+        viewsApi.getRecentReservations(),
+      ]);
+      setSummary(summaryData);
+      setActiveUsers(usersData);
+      setDualRoleUsers(dualRoleData);
+      setLendersOnly(lendersOnlyData);
+      setRecentReservations(reservationsData);
+    } catch (err) {
+      console.error('Admin dashboard veri yükleme hatası:', err);
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  // --- useEffect Sadece Bu Fonksiyonu Çağırır ---
+  useEffect(() => {
+    fetchDashboardData();
   }, []);
+
+  // --- Silme İşlemi ---
+  const handleDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!deleteInputId) return;
+
+    setIsDeleting(true);
+    setDeleteError(null);
+
+    try {
+      await userApi.delete(Number(deleteInputId));
+
+      // Başarılı Oldu:
+      setIsDeleteModalOpen(false);
+      setDeleteInputId("");
+      
+      // --- 2. ADIM: SORUNUN ÇÖZÜMÜ ---
+      // onUserDeleted() yerine kendi veri çekme fonksiyonumuzu çağırıyoruz.
+      // Bu sayede listeler güncel haliyle tekrar ekrana gelir.
+      await fetchDashboardData(); 
+      
+      // --- DEĞİŞİKLİK: Alert yerine Toast çağırıyoruz ---
+      showToast(`Kullanıcı (ID: ${deleteInputId}) başarıyla silindi.`, 'success');
+
+    } catch (err: any) {
+      console.error("Silme hatası:", err);
+      setDeleteError(err.message || "Silme işlemi sırasında bir hata oluştu.");
+    } finally {
+      setIsDeleting(false);
+    }
+  };
 
   if (loading) {
     return (
@@ -150,6 +256,30 @@ export default function AdminDashboard() {
     if (isLender(type)) return { bg: 'bg-emerald-100', text: 'text-emerald-700', dot: 'bg-emerald-500' };
     return { bg: 'bg-gray-100', text: 'text-gray-700', dot: 'bg-gray-500' };
   };
+
+  // Veriyi user_id'ye göre birleştiriyoruz
+  const groupedActiveUsers = Object.values(
+    // ÇÖZÜM: Reduce'un generic tipini belirtiyoruz veya başlangıç değerine 'as' ile tip veriyoruz
+    activeUsers.reduce((acc, user) => {
+      if (!acc[user.user_id]) {
+        // Kullanıcı ilk kez geliyorsa kaydı oluştur
+        acc[user.user_id] = { 
+          ...user, 
+          activities: [user.activity_type] 
+        };
+      } else {
+        // Kullanıcı zaten varsa, sadece yeni aktivite tipini ekle
+        // 'any' kullandığımız için TS burada kızmayacaktır
+        if (!acc[user.user_id].activities.includes(user.activity_type)) {
+          acc[user.user_id].activities.push(user.activity_type);
+        }
+      }
+      return acc;
+    }, {} as Record<number, any>) // <--- DÜZELTME BURADA
+  );
+
+  // Şu an gösterilecek dilim
+  const visibleUsers = uniqueUserList.slice(0, visibleCount);
 
   return (
     <div className="space-y-6 max-w-6xl mx-auto">
@@ -339,10 +469,10 @@ export default function AdminDashboard() {
         <div className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
           <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
             <Calendar className="w-5 h-5 text-purple-500" />
-            Son Kiralamalar
+            Son 10 Aktivite
           </h3>
           <div className="space-y-3">
-            {recentReservations.slice(0, 6).map((res, idx) => (
+            {recentReservations.slice(0, 10).map((res, idx) => (
               <div 
                 key={idx}
                 className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
@@ -382,80 +512,160 @@ export default function AdminDashboard() {
         </div>
 
         {/* Aktif Kullanıcılar */}
-        <div className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
-          <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
+        {/* --- ANA KART --- */}
+        <div className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100 h-full flex flex-col relative">
+        
+        {/* Başlık ve Silme Butonu */}
+        <div className="flex justify-between items-center mb-4 flex-shrink-0">
+          <h3 className="font-bold text-gray-800 flex items-center gap-2">
             <Users className="w-5 h-5 text-blue-500" />
             Aktif Kullanıcılar
+            <span className="text-xs font-normal text-gray-400 ml-1">
+              ({uniqueUserList.length})
+            </span>
           </h3>
-          <div className="space-y-3">
-            {(() => {
-              // Unique kullanıcıları ve rollerini hesapla
-              const userRolesMap = new Map<number, { user_name: string; isBorrower: boolean; isLender: boolean }>();
-              activeUsers.forEach(user => {
-                const existing = userRolesMap.get(user.user_id);
-                if (existing) {
-                  if (isBorrower(user.activity_type)) existing.isBorrower = true;
-                  if (isLender(user.activity_type)) existing.isLender = true;
-                } else {
-                  userRolesMap.set(user.user_id, {
-                    user_name: user.user_name,
-                    isBorrower: isBorrower(user.activity_type),
-                    isLender: isLender(user.activity_type),
-                  });
-                }
-              });
-              
-              return Array.from(userRolesMap.entries()).slice(0, 8).map(([userId, userData]) => {
-                const hasBothRoles = userData.isBorrower && userData.isLender;
-                return (
-                  <div 
-                    key={userId}
-                    className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
-                  >
-                    <div className="flex items-center gap-3">
-                      <div className={`w-10 h-10 rounded-full flex items-center justify-center text-white font-bold text-sm ${
-                        hasBothRoles 
-                          ? 'bg-gradient-to-br from-purple-500 to-pink-600'
-                          : userData.isLender 
-                            ? 'bg-gradient-to-br from-emerald-500 to-teal-600' 
-                            : 'bg-gradient-to-br from-blue-500 to-indigo-600'
-                      }`}>
-                        {userData.user_name.charAt(0).toUpperCase()}
-                      </div>
-                      <div>
-                        <span className="font-medium text-gray-700 block">{userData.user_name}</span>
-                        <span className="text-xs text-gray-400">#{userId}</span>
-                      </div>
+          
+          {/* GERİ GETİRİLEN SİLME BUTONU */}
+          <button
+            onClick={() => setIsDeleteModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-red-600 bg-red-50 hover:bg-red-100 rounded-lg transition-colors border border-red-100"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Kullanıcı Sil
+          </button>
+        </div>
+
+        {/* Liste Alanı (h-[750px] ile ~10 satır görünür) */}
+        <div 
+          className="space-y-3 overflow-y-auto h-[750px] pr-2 custom-scrollbar"
+          onScroll={handleScroll}
+        >
+          {visibleUsers.length > 0 ? (
+            visibleUsers.map((user) => {
+              const hasBothRoles = user.isBorrower && user.isLender;
+              return (
+                <div 
+                  key={user.user_id} 
+                  className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors"
+                >
+                  <div className="flex items-center gap-3">
+                    <div className={`w-10 h-10 flex-shrink-0 rounded-full flex items-center justify-center text-white font-bold text-sm ${
+                      hasBothRoles ? 'bg-gradient-to-br from-purple-500 to-pink-600' : 
+                      user.isLender ? 'bg-gradient-to-br from-emerald-500 to-teal-600' : 
+                      'bg-gradient-to-br from-blue-500 to-indigo-600'
+                    }`}>
+                      {user.user_name.charAt(0).toUpperCase()}
                     </div>
-                    <div className="flex gap-1">
-                      {hasBothRoles ? (
-                        <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-purple-100 text-purple-700">
-                          Kiracı + Kiraya Veren
-                        </span>
-                      ) : (
-                        <>
-                          {userData.isBorrower && (
-                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-blue-100 text-blue-700">
-                              Kiracı
-                            </span>
-                          )}
-                          {userData.isLender && (
-                            <span className="text-xs px-2.5 py-1 rounded-full font-medium bg-emerald-100 text-emerald-700">
-                              Kiraya Veren
-                            </span>
-                          )}
-                        </>
-                      )}
+                    <div>
+                      <span className="font-medium text-gray-700 block truncate max-w-[120px]">
+                        {user.user_name}
+                      </span>
+                      <span className="text-xs text-gray-400">#{user.user_id}</span>
                     </div>
                   </div>
-                );
-              });
-            })()}
-            {uniqueUserCount === 0 && (
-              <p className="text-center text-gray-400 py-4">Henüz aktif kullanıcı yok</p>
-            )}
+                  <div className="flex gap-1">
+                     {hasBothRoles ? (
+                        <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-purple-100 text-purple-700 border border-purple-200">Çift Rol</span>
+                     ) : user.isLender ? (
+                        <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-emerald-100 text-emerald-700 border border-emerald-200">Veren</span>
+                     ) : (
+                        <span className="text-[10px] px-2 py-1 rounded-full font-bold bg-blue-100 text-blue-700 border border-blue-200">Alan</span>
+                     )}
+                  </div>
+                </div>
+              );
+            })
+          ) : (
+            <p className="text-center text-gray-400 py-8">Henüz aktif kullanıcı yok</p>
+          )}
+        </div>
+      </div>
+
+        {/* --- SİLME MODALI --- */}
+      {isDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-red-50">
+              <h3 className="font-bold text-red-700 flex items-center gap-2">
+                <Trash2 className="w-5 h-5" />
+                Kullanıcı Silme
+              </h3>
+              <button onClick={() => setIsDeleteModalOpen(false)} className="text-red-400 hover:text-red-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleDeleteSubmit} className="p-6 space-y-4">
+              <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-red-800">
+                  <p className="font-bold">Dikkat: Bu işlem geri alınamaz!</p>
+                  <p className="mt-1">Kullanıcı ve tüm verileri kalıcı olarak silinecektir.</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Silinecek ID</label>
+                <input 
+                  type="number" 
+                  required
+                  value={deleteInputId}
+                  onChange={(e) => setDeleteInputId(e.target.value)}
+                  placeholder="Örn: 101"
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-red-500 outline-none"
+                />
+              </div>
+
+              {deleteInputId && (
+                <div className={`p-3 rounded-lg border text-sm flex items-center justify-between ${
+                  userToBeDeleted ? 'bg-blue-50 border-blue-100 text-blue-700' : 'bg-gray-50 border-gray-200 text-gray-500'
+                }`}>
+                  <span className="font-medium">Kullanıcı:</span>
+                  <span className="font-bold">{userToBeDeleted ? userToBeDeleted.user_name : "Bulunamadı"}</span>
+                </div>
+              )}
+
+              {deleteError && (
+                <div className="text-red-600 text-sm font-medium text-center bg-red-50 p-2 rounded">{deleteError}</div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => setIsDeleteModalOpen(false)} className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200">Vazgeç</button>
+                <button type="submit" disabled={isDeleting || !deleteInputId} className="flex-1 py-2.5 bg-red-600 text-white font-medium rounded-xl hover:bg-red-700 shadow-lg shadow-red-200 flex items-center justify-center gap-2 disabled:opacity-50">
+                  {isDeleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Siliniyor...</> : "Kalıcı Sil"}
+                </button>
+              </div>
+            </form>
           </div>
         </div>
+      )}
+
+      {/* --- YENİ: PROFESYONEL TOAST BİLDİRİM --- */}
+      {toast && (
+        <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border border-gray-100 bg-white animate-bounce-in transition-all ${
+          toast.type === 'success' ? 'border-l-4 border-l-emerald-500' : 'border-l-4 border-l-red-500'
+        }`}>
+          {/* İkon */}
+          <div className={`flex-shrink-0 ${toast.type === 'success' ? 'text-emerald-500' : 'text-red-500'}`}>
+            {toast.type === 'success' ? <CheckCircle className="w-6 h-6" /> : <AlertCircle className="w-6 h-6" />}
+          </div>
+          
+          {/* Metin */}
+          <div>
+            <h4 className={`font-bold text-sm ${toast.type === 'success' ? 'text-emerald-800' : 'text-red-800'}`}>
+              {toast.type === 'success' ? 'İşlem Başarılı' : 'Hata Oluştu'}
+            </h4>
+            <p className="text-xs text-gray-600 mt-0.5">
+              {toast.message}
+            </p>
+          </div>
+
+          {/* Kapatma X Butonu */}
+          <button onClick={() => setToast(null)} className="ml-2 text-gray-400 hover:text-gray-600">
+            <X className="w-4 h-4" />
+          </button>
+        </div>
+        )}
       </div>
 
       {/* System Health */}
@@ -552,7 +762,7 @@ export default function AdminDashboard() {
                 <GitMerge className="w-5 h-5 text-blue-200" />
                 <span className="text-blue-100 text-sm font-medium">UNION</span>
               </div>
-              <p className="text-3xl font-bold">{activeUsers.length}</p>
+              <p className="text-3xl font-bold">{new Set(activeUsers.map((user) => user.user_id)).size}</p>
               <p className="text-blue-200 text-sm mt-1">Tüm Aktif Kullanıcı</p>
             </div>
             <div className="bg-gradient-to-br from-purple-500 to-purple-600 rounded-xl p-5 text-white">
@@ -575,47 +785,60 @@ export default function AdminDashboard() {
         )}
 
         {activeSetTab === 'union' && (
-          <div className="space-y-4">
-            <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
-              <h4 className="font-semibold text-blue-900 mb-1">UNION Operatörü</h4>
-              <p className="text-blue-700 text-sm">
-                RESERVATION tablosunda (kiracı) VEYA TOOL tablosunda (kiraya veren) olan TÜM kullanıcılar.
-              </p>
+        <div className="space-y-4">
+          <div className="bg-blue-50 border-l-4 border-blue-500 p-4 rounded-r-xl">
+            <h4 className="font-semibold text-blue-900 mb-1">UNION Operatörü</h4>
+            <p className="text-blue-700 text-sm">
+              RESERVATION tablosunda (kiracı) VEYA TOOL tablosunda (kiraya veren) olan TÜM kullanıcılar.
+            </p>
+          </div>
+
+          <div className="bg-gray-50 rounded-xl overflow-hidden">
+            {/* Benzersiz kişi sayısı zaten gruplandığı için direkt length alabiliriz */}
+            <div className="px-4 py-3 bg-blue-500 text-white font-medium">
+              Toplam {groupedActiveUsers.length} Aktif Kullanıcı
             </div>
-            <div className="bg-gray-50 rounded-xl overflow-hidden">
-              <div className="px-4 py-3 bg-blue-500 text-white font-medium">
-                Toplam {activeUsers.length} Aktif Kullanıcı
-              </div>
-              <div className="max-h-72 overflow-y-auto">
-                <table className="w-full">
-                  <thead className="bg-gray-100 sticky top-0">
-                    <tr>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">ID</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">Kullanıcı</th>
-                      <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">Aktivite</th>
+
+            <div className="max-h-72 overflow-y-auto">
+              <table className="w-full">
+                <thead className="bg-gray-100 sticky top-0 z-10">
+                  <tr>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">ID</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">Kullanıcı</th>
+                    <th className="px-4 py-2 text-left text-xs font-medium text-gray-600">Aktivite</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-gray-100">
+                  {groupedActiveUsers.map((user) => (
+                    <tr key={user.user_id} className="hover:bg-gray-50 transition-colors">
+                      <td className="px-4 py-3 text-sm text-gray-500">#{user.user_id}</td>
+                      <td className="px-4 py-3 text-sm font-medium text-gray-800">{user.user_name}</td>
+                      <td className="px-4 py-3">
+                        <div className="flex gap-2 flex-wrap">
+                          {/* Kullanıcının sahip olduğu tüm aktiviteleri dönüyoruz */}
+                          {user.activities.map((activity: string, index: React.Key | null | undefined) => (
+                            <span 
+                              key={index}
+                              className={`text-xs px-2 py-1 rounded-full font-medium inline-flex items-center gap-1 ${
+                                isBorrower(activity) 
+                                  ? 'bg-blue-100 text-blue-700 border border-blue-200' 
+                                  : 'bg-emerald-100 text-emerald-700 border border-emerald-200'
+                              }`}
+                            >
+                              {/* İsteğe bağlı: Görsel ikonlar */}
+                              {isBorrower(activity) ? '⬇️' : '⬆️'} 
+                              {getActivityLabel(activity)}
+                            </span>
+                          ))}
+                        </div>
+                      </td>
                     </tr>
-                  </thead>
-                  <tbody>
-                    {activeUsers.map((user) => (
-                      <tr key={`${user.user_id}-${user.activity_type}`} className="border-b border-gray-100 hover:bg-gray-50">
-                        <td className="px-4 py-2 text-sm text-gray-500">#{user.user_id}</td>
-                        <td className="px-4 py-2 text-sm font-medium text-gray-800">{user.user_name}</td>
-                        <td className="px-4 py-2">
-                          <span className={`text-xs px-2 py-1 rounded-full font-medium ${
-                            isBorrower(user.activity_type) 
-                              ? 'bg-blue-100 text-blue-700' 
-                              : 'bg-emerald-100 text-emerald-700'
-                          }`}>
-                            {getActivityLabel(user.activity_type)}
-                          </span>
-                        </td>
-                      </tr>
-                    ))}
-                  </tbody>
-                </table>
-              </div>
+                  ))}
+                </tbody>
+              </table>
             </div>
           </div>
+        </div>
         )}
 
         {activeSetTab === 'intersect' && (

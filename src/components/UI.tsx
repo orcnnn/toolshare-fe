@@ -30,7 +30,7 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
         </div>
 
         {/* Masaüstü Navigasyonu */}
-        <nav className="hidden lg:flex items-center gap-1">
+        <nav className="hidden lg:flex flex-1 justify-center items-center gap-1">
           {navItems.map((item) => {
             const Icon = item.icon;
             const isActive = activeTab === item.id;
@@ -51,10 +51,6 @@ export const Header: React.FC<HeaderProps> = ({ activeTab, onTabChange }) => {
           })}
         </nav>
 
-        <div className="text-sm font-medium text-blue-600 bg-blue-50 px-3 py-1 rounded-full hidden sm:flex items-center gap-1">
-          <MapPin className="w-4 h-4" />
-          Kadıköy, İstanbul
-        </div>
       </div>
     </header>
   );

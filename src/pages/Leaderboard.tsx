@@ -87,6 +87,25 @@ export default function Leaderboard() {
     );
   }
 
+  const groupedUsers = Array.from(
+  allActiveUsers.reduce((map, user) => {
+    if (!map.has(user.user_id)) {
+      // Kullanıcı ilk kez ekleniyorsa
+      map.set(user.user_id, { 
+        ...user, 
+        all_activities: [user.activity_type] // Aktiviteleri dizi yapıyoruz
+      });
+    } else {
+      // Kullanıcı zaten varsa, yeni aktivite tipini listesine ekle
+      const existingUser = map.get(user.user_id);
+      if (!existingUser.all_activities.includes(user.activity_type)) {
+        existingUser.all_activities.push(user.activity_type);
+      }
+    }
+    return map;
+  }, new Map()).values()
+  );
+
   return (
     <div className="space-y-6 max-w-4xl mx-auto">
       {/* Başlık */}
@@ -98,48 +117,8 @@ export default function Leaderboard() {
         <p className="text-sm opacity-90">En güvenilir ve aktif topluluk üyelerini keşfedin</p>
       </div>
 
-      {/* Tab Navigasyonu */}
-      <div className="flex gap-2 bg-white rounded-2xl p-2 shadow-sm">
-        <button
-          onClick={() => setActiveTab('top')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
-            activeTab === 'top'
-              ? 'bg-yellow-100 text-yellow-700'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <Trophy className="w-5 h-5" />
-          <span className="hidden sm:inline">En İyi Kullanıcılar</span>
-          <span className="sm:hidden">En İyi</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('active')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
-            activeTab === 'active'
-              ? 'bg-blue-100 text-blue-700'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <Flame className="w-5 h-5" />
-          <span className="hidden sm:inline">Aktif Üyeler</span>
-          <span className="sm:hidden">Aktif</span>
-        </button>
-        <button
-          onClick={() => setActiveTab('dual')}
-          className={`flex-1 flex items-center justify-center gap-2 px-4 py-3 rounded-xl font-medium transition-all ${
-            activeTab === 'dual'
-              ? 'bg-purple-100 text-purple-700'
-              : 'text-gray-600 hover:bg-gray-50'
-          }`}
-        >
-          <Users className="w-5 h-5" />
-          <span className="hidden sm:inline">İkili Roller</span>
-          <span className="sm:hidden">İkili</span>
-        </button>
-      </div>
-
       {/* En İyi Kullanıcılar */}
-      {activeTab === 'top' && (
+      {(
         <div className="space-y-3">
           {topUsers.length > 0 ? (
             topUsers.map((user, index) => (
@@ -194,12 +173,12 @@ export default function Leaderboard() {
           )}
         </div>
       )}
-
+      
       {/* Aktif Üyeler */}
       {activeTab === 'active' && (
         <div className="space-y-3">
-          {allActiveUsers.length > 0 ? (
-            allActiveUsers.map((user) => (
+          {groupedUsers.length > 0 ? (
+            groupedUsers.map((user) => (
               <div
                 key={user.user_id}
                 className="bg-white rounded-2xl p-4 shadow-sm hover:shadow-md transition-all border border-blue-100"
@@ -213,78 +192,46 @@ export default function Leaderboard() {
                   {/* User Info */}
                   <div className="flex-1 min-w-0">
                     <h3 className="font-bold text-gray-800 truncate">{user.user_name}</h3>
+                    
+                    {/* Boncuklar (Badges) Alanı */}
                     <div className="flex gap-2 flex-wrap mt-1">
-                      {user.activity_type && (
-                        <span className={`inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full ${
-                          user.activity_type === 'Borrower' 
-                            ? 'bg-green-100 text-green-700' 
-                            : 'bg-purple-100 text-purple-700'
-                        }`}>
-                          <span>{user.activity_type === 'Borrower' ? '🟢' : '🟣'}</span>
-                          {user.activity_type === 'Borrower' ? 'Kiracı' : 'Kiralayan'}
+                      
+                      {/* Kiracı (Borrower) Kontrolü */}
+                      {user.all_activities.includes('Borrower') && (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-green-100 text-green-700">
+                          <span>🟢</span>
+                          Kiracı
                         </span>
                       )}
+
+                      {/* Kiralayan (Lender) Kontrolü */}
+                      {/* Not: Veritabanınızda 'Lender' yerine başka bir keyword varsa burayı güncelleyin */}
+                      {user.all_activities.includes('Lender') && (
+                        <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">
+                          <span>🟣</span>
+                          Kiralayan
+                        </span>
+                      )}
+                      
                     </div>
                   </div>
                 </div>
               </div>
             ))
           ) : (
-            <div className="text-center py-8 text-gray-400">
-              <Flame className="w-12 h-12 mx-auto mb-2 opacity-30" />
-              <p>Henüz veri bulunmamaktadır</p>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* İkili Roller */}
-      {activeTab === 'dual' && (
-        <div className="space-y-3">
-          {dualRoleUsers.length > 0 ? (
-            dualRoleUsers.map((user) => (
-              <div
-                key={user.user_id}
-                className="bg-gradient-to-r from-purple-50 to-pink-50 rounded-2xl p-4 shadow-sm hover:shadow-md transition-all border border-purple-200"
-              >
-                <div className="flex items-center gap-4">
-                  {/* User Avatar */}
-                  <div className="flex-shrink-0 w-12 h-12 rounded-full bg-gradient-to-br from-purple-500 to-pink-500 flex items-center justify-center text-white font-bold text-lg">
-                    {user.user_name.charAt(0).toUpperCase()}
+      <div className="text-center py-8 text-gray-400">
+                    <Flame className="w-12 h-12 mx-auto mb-2 opacity-30" />
+                    <p>Henüz veri bulunmamaktadır</p>
                   </div>
-
-                  {/* User Info */}
-                  <div className="flex-1 min-w-0">
-                    <h3 className="font-bold text-gray-800 truncate">{user.user_name}</h3>
-                    <p className="text-xs text-gray-500 mt-1">
-                      Hem kiracı hem kiralayan
-                    </p>
-                  </div>
-                </div>
-              </div>
-            ))
-          ) : (
-            <div className="text-center py-8 text-gray-400">
-              <Users className="w-12 h-12 mx-auto mb-2 opacity-30" />
-              <p>Henüz veri bulunmamaktadır</p>
-            </div>
-          )}
+                )}
         </div>
-      )}
+      )}  
 
       {/* Stats Summary */}
-      <div className="grid grid-cols-3 gap-3 bg-white rounded-2xl p-4 shadow-sm">
-        <div className="text-center">
-          <div className="text-2xl font-bold text-yellow-600">{topUsers.length}</div>
-          <p className="text-xs text-gray-600">En İyi Kullanıcı</p>
-        </div>
+      <div className="grid grid-cols-1 gap-1 bg-white rounded-2xl p-4 shadow-sm">
         <div className="text-center border-l border-r border-gray-200">
-          <div className="text-2xl font-bold text-blue-600">{allActiveUsers.length}</div>
+          <div className="text-2xl font-bold text-blue-600">{new Set(allActiveUsers.map((user) => user.user_id)).size}</div>
           <p className="text-xs text-gray-600">Aktif Üye</p>
-        </div>
-        <div className="text-center">
-          <div className="text-2xl font-bold text-purple-600">{dualRoleUsers.length}</div>
-          <p className="text-xs text-gray-600">İkili Roller</p>
         </div>
       </div>
     </div>
