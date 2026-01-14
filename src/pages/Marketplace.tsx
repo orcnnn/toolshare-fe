@@ -73,6 +73,21 @@ export default function Marketplace({
   // Filtreleme dropdown state
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
 
+  // YENİ: Verileri tazelemeyi tetikleyecek sayaç
+  const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // YENİ: Cache'i temizleyip verileri yenileyen fonksiyon
+  const refreshData = () => {
+    // 1. Mevcut status filtresine ait cache'i temizle
+    const cacheKey = `marketplace_status_${statusFilter}`;
+    const cacheTimeKey = `marketplace_status_time_${statusFilter}`;
+    sessionStorage.removeItem(cacheKey);
+    sessionStorage.removeItem(cacheTimeKey);
+
+    // 2. Tetikleyiciyi artır (useEffect'lerin tekrar çalışması için)
+    setRefreshTrigger(prev => prev + 1);
+  };
+
   // Advanced search'ü tetikle
   useEffect(() => {
     if (!useAdvancedSearch || !searchTerm) return;
@@ -91,7 +106,7 @@ export default function Marketplace({
     };
 
     performAdvancedSearch();
-  }, [searchTerm, useAdvancedSearch]);
+  }, [searchTerm, useAdvancedSearch, refreshTrigger]); // refreshTrigger eklendi
 
   // Durum bilgisini yükle - sessionStorage cache ile
   useEffect(() => {
@@ -104,7 +119,7 @@ export default function Marketplace({
       const cachedData = sessionStorage.getItem(cacheKey);
       const cacheTime = sessionStorage.getItem(cacheTimeKey);
       
-      // Cache 2 dakikadan yeni ise kullan (marketplace daha sık güncellenmeli)
+      // Cache 2 dakikadan yeni ise kullan VE refreshData ile silinmemişse
       if (cachedData && cacheTime) {
         const cacheAge = Date.now() - parseInt(cacheTime);
         if (cacheAge < 2 * 60 * 1000) { // 2 dakika
@@ -121,6 +136,7 @@ export default function Marketplace({
         }
       }
 
+      // Cache yoksa veya eskiyse API'den çek
       setStatusLoading(true);
       try {
         const data = await toolApi.getByStatus(statusFilter);
@@ -144,16 +160,14 @@ export default function Marketplace({
     };
 
     loadToolsByStatus();
-  }, [statusFilter]);
+  }, [statusFilter, refreshTrigger]); // refreshTrigger eklendi
 
   // Props'tan gelen tools için sahipleri yükle - sessionStorage cache ile
   useEffect(() => {
     const loadOwners = async () => {
-      // Önce sessionStorage'dan cache'i yükle
       const cachedOwners = sessionStorage.getItem('marketplace_owners_cache');
       let existingOwners: OwnerCache = cachedOwners ? JSON.parse(cachedOwners) : {};
       
-      // State'i cache ile başlat
       if (Object.keys(existingOwners).length > 0 && Object.keys(owners).length === 0) {
         setOwners(existingOwners);
       }
@@ -163,7 +177,6 @@ export default function Marketplace({
       
       await Promise.all(
         uniqueUserIds.map(async (userId) => {
-          // Hem state'te hem cache'te yoksa çek
           if (!owners[userId] && !existingOwners[userId]) {
             try {
               const user = await userApi.getById(userId);
@@ -178,7 +191,6 @@ export default function Marketplace({
       if (Object.keys(newOwners).length > 0) {
         setOwners(prev => {
           const updated = { ...prev, ...newOwners };
-          // SessionStorage'a kaydet
           sessionStorage.setItem('marketplace_owners_cache', JSON.stringify(updated));
           return updated;
         });
@@ -188,7 +200,7 @@ export default function Marketplace({
     if (tools.length > 0) {
       loadOwners();
     }
-  }, [tools]);
+  }, [tools]); // Sahipler çok sık değişmediği için buraya refreshTrigger eklemedik, performans için.
   
   // Filtreleme: status filter + search + bana ait
   const displayTools = statusFilter === 'all' ? tools : filteredByStatus;
@@ -204,11 +216,6 @@ export default function Marketplace({
     return matchesSearch;
   });
 
-  // Tool'un durumunu al
-  const getToolStatus = (toolId: number): ToolStatusType | null => {
-    return toolStatuses[toolId]?.status || null;
-  };
-
   // Durum badge'i render et
   const renderStatusBadge = (toolId: number) => {
     const toolWithStatus = toolStatuses[toolId];
@@ -216,7 +223,6 @@ export default function Marketplace({
 
     const status = toolWithStatus.status;
     
-    // Türkçe status değerlerine göre renk belirle
     const statusConfig: Record<string, { bg: string; text: string }> = {
       'Müsait': { bg: 'bg-green-100', text: 'text-green-700' },
       'Şu An Kirada': { bg: 'bg-orange-100', text: 'text-orange-700' },
@@ -232,21 +238,18 @@ export default function Marketplace({
     );
   };
 
-  // Input değişimi için tip güvenliği
   const handleSearchChange = (e: ChangeEvent<HTMLInputElement>) => {
     setSearchTerm(e.target.value);
   };
 
-  // Kirala butonuna tıklandığında modal aç
   const handleReserveClick = (tool: Tool | ToolWithStatus) => {
-    // ToolWithStatus ise Tool formatına dönüştür
     if ('owner_id' in tool) {
       const convertedTool: Tool = {
         tool_id: tool.tool_id,
         tool_name: tool.tool_name,
         user_id: tool.owner_id,
         category_id: tool.category_id,
-        created_at: new Date().toISOString(), // Placeholder
+        created_at: new Date().toISOString(),
       };
       setSelectedTool(convertedTool);
     } else {
@@ -254,15 +257,18 @@ export default function Marketplace({
     }
   };
 
-  // Modal'dan onay geldiğinde
+  // GÜNCELLENDİ: İşlem sonrası verileri tazele
   const handleReserveConfirm = async (startDate: Date, endDate: Date) => {
     if (selectedTool) {
       await onReserve(selectedTool, startDate, endDate);
+      
+      // YENİ: Cache temizle ve listeyi yenile
+      refreshData();
+
       setSelectedTool(null);
     }
   };
 
-  // Modal'ı kapat
   const handleModalClose = () => {
     setSelectedTool(null);
   };
@@ -320,7 +326,6 @@ export default function Marketplace({
           />
         </div>
 
-        {/* Advanced Search ve Filtreleme Butonları */}
         <div className="flex gap-2 flex-wrap items-center">
           <button
             onClick={() => setUseAdvancedSearch(!useAdvancedSearch)}
@@ -329,13 +334,11 @@ export default function Marketplace({
                 ? 'bg-white text-purple-600 shadow-md' 
                 : 'bg-purple-50 text-purple-600 hover:bg-purple-100'
             }`}
-            title={useAdvancedSearch ? "Normal arama moduna geç" : "Gelişmiş arama modunu aç"}
           >
             <TrendingUp className="w-4 h-4" />
             {useAdvancedSearch ? 'Normal Arama' : 'Gelişmiş Arama'}
           </button>
           
-          {/* Filtreleme Dropdown - Sadece normal aramada */}
           {!useAdvancedSearch && (
             <div className="relative">
               <button
@@ -351,17 +354,14 @@ export default function Marketplace({
                 <ChevronDown className={`w-4 h-4 transition-transform ${filterDropdownOpen ? 'rotate-180' : ''}`} />
               </button>
               
-              {/* Dropdown Menu */}
               {filterDropdownOpen && (
                 <>
-                  {/* Overlay to close dropdown */}
                   <div 
                     className="fixed inset-0 z-10" 
                     onClick={() => setFilterDropdownOpen(false)}
                   />
                   
                   <div className="absolute top-full left-0 mt-2 w-72 bg-white rounded-xl shadow-xl border border-gray-200 z-20 overflow-hidden">
-                    {/* Sahiplik Filtresi */}
                     <div className="p-3 border-b border-gray-100">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Sahiplik</p>
                       <div className="flex gap-2">
@@ -390,7 +390,6 @@ export default function Marketplace({
                       </div>
                     </div>
                     
-                    {/* Durum Filtresi */}
                     <div className="p-3">
                       <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">Durum</p>
                       <div className="grid grid-cols-2 gap-2">
@@ -419,7 +418,6 @@ export default function Marketplace({
                       </div>
                     </div>
                     
-                    {/* Filtreleri Temizle */}
                     {(showOnlyMyTools || statusFilter !== 'all') && (
                       <div className="p-3 border-t border-gray-100">
                         <button
@@ -440,7 +438,6 @@ export default function Marketplace({
             </div>
           )}
           
-          {/* Aktif filtre göstergesi */}
           {!useAdvancedSearch && (showOnlyMyTools || statusFilter !== 'all') && (
             <div className="flex gap-1.5 flex-wrap">
               {showOnlyMyTools && (
@@ -468,7 +465,6 @@ export default function Marketplace({
           )}
         </div>
         
-        {/* Sonuç Sayısı - Sadece normal aramada */}
         {!useAdvancedSearch && (
           <div className="flex items-center justify-between text-sm">
             <span className="text-gray-500">
@@ -485,7 +481,7 @@ export default function Marketplace({
         )}
       </div>
 
-      {/* Gelişmiş Arama Sonuçları - Müsait Aletler */}
+      {/* Gelişmiş Arama Sonuçları */}
       {useAdvancedSearch && (
         <div className="bg-gradient-to-r from-purple-50 to-pink-50 p-6 rounded-2xl border border-purple-200">
           <h3 className="font-bold text-gray-800 mb-4 flex items-center gap-2">
@@ -517,7 +513,6 @@ export default function Marketplace({
                     <button
                       onClick={() => {
                         if (!isOwnTool) {
-                          // AvailableToolSearch'ü Tool formatına dönüştür
                           const convertedTool: Tool = {
                             tool_id: tool.tool_id,
                             tool_name: tool.tool_name,
@@ -549,14 +544,12 @@ export default function Marketplace({
         </div>
       )}
 
-      {/* İlan Listesi - Sadece normal aramada */}
+      {/* İlan Listesi */}
       {!useAdvancedSearch && (
       <>
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-4 md:gap-6">
         {filteredTools.map(tool => {
-          // Filtered data'dan owner bilgisi al (API zaten döndürüyor)
           const toolStatus = toolStatuses[tool.tool_id];
-          // Type guard: user_id varsa Tool, yoksa ToolWithStatus
           const userId = 'user_id' in tool ? tool.user_id : toolStatus?.owner_id;
           const ownerName = toolStatus?.owner_name || (userId ? owners[userId]?.user_name : undefined);
           const ownerId = toolStatus?.owner_id || userId;
@@ -564,11 +557,9 @@ export default function Marketplace({
           const createdAt = 'created_at' in tool ? tool.created_at : undefined;
           
           const isOwnTool = ownerId === currentUserId;
-          // Basit kontrol: tool şu an kirada mı?
           const isCurrentlyRented = toolStatus?.status === 'Şu An Kirada';
           return (
             <div key={tool.tool_id} className="bg-white rounded-2xl shadow-sm hover:shadow-md transition-shadow overflow-hidden group">
-              {/* Owner Bilgisi - Üst Kısım */}
               <div className="p-3 flex items-center gap-3 border-b border-gray-100">
                 <div className="w-10 h-10 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold text-sm shadow-sm">
                   {ownerName?.charAt(0).toUpperCase() || '?'}
@@ -587,7 +578,6 @@ export default function Marketplace({
                 </div>
               </div>
 
-              {/* Tool Görseli */}
               <div className="relative h-48 bg-gradient-to-br from-gray-100 to-gray-200 overflow-hidden">
                 <img 
                   src={placeholderImages[tool.tool_id % placeholderImages.length]} 
@@ -597,7 +587,6 @@ export default function Marketplace({
                 <div className="absolute bottom-3 left-3 bg-black/60 text-white px-2 py-1 rounded-md text-xs backdrop-blur-sm">
                   #{tool.tool_id}
                 </div>
-                {/* Durum Badge */}
                 <div className="absolute top-3 right-3">
                   {renderStatusBadge(tool.tool_id)}
                 </div>

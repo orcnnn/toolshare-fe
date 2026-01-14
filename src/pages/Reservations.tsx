@@ -1,7 +1,8 @@
 // src/pages/Reservations.tsx
 import React, { useEffect, useState } from 'react';
 import { Calendar, Wrench, Clock, CheckCircle, XCircle, Star } from 'lucide-react';
-import { Reservation, Tool, toolApi, userApi, reservationApi } from '../services/api';
+// YENİ: 'User' tipini de import ettik
+import { Reservation, Tool, User, toolApi, userApi, reservationApi } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
 
 // Props arayüzü
@@ -14,6 +15,8 @@ interface ReservationsProps {
 
 // Tool cache'i için tip
 type ToolCache = Record<number, Tool>;
+// YENİ: Owner (Kullanıcı) cache'i için tip
+type OwnerCache = Record<number, User>;
 
 // Review modal state için interface
 interface ReviewModalState {
@@ -26,6 +29,9 @@ interface ReviewModalState {
 
 export default function Reservations({ reservations, loading = false, currentUserId, onReservationFinished }: ReservationsProps) {
   const [tools, setTools] = useState<ToolCache>({});
+  // YENİ: Sahiplerin isimlerini tutacak state
+  const [owners, setOwners] = useState<OwnerCache>({});
+  
   // reservation_id -> score mapping
   const [reviewedReservations, setReviewedReservations] = useState<Map<number, number>>(new Map());
   const [reviewModal, setReviewModal] = useState<ReviewModalState>({
@@ -93,7 +99,7 @@ export default function Reservations({ reservations, loading = false, currentUse
     }
   };
 
-  // Rezervasyonlardaki tool bilgilerini yükle
+  // 1. Rezervasyonlardaki tool bilgilerini yükle
   useEffect(() => {
     const loadTools = async () => {
       const uniqueToolIds = [...new Set(reservations.map(r => r.tool_id))];
@@ -120,7 +126,42 @@ export default function Reservations({ reservations, loading = false, currentUse
     if (reservations.length > 0) {
       loadTools();
     }
-  }, [reservations]);
+  }, [reservations]); // tools dependency'den çıkarıldı, loop olmasın diye
+
+  // YENİ: 2. Tools yüklendikten sonra sahiplerini (isimlerini) yükle
+  useEffect(() => {
+    const loadOwners = async () => {
+      const loadedTools = Object.values(tools);
+      if (loadedTools.length === 0) return;
+
+      // Tool'lardan user_id'leri topla
+      const uniqueOwnerIds = [...new Set(loadedTools.map(t => t.user_id))];
+      
+      // Henüz yüklenmemiş olanları bul
+      const idsToFetch = uniqueOwnerIds.filter(id => !owners[id]);
+      
+      if (idsToFetch.length === 0) return;
+
+      const newOwners: OwnerCache = {};
+      
+      await Promise.all(
+        idsToFetch.map(async (userId) => {
+          try {
+            const user = await userApi.getById(userId);
+            newOwners[userId] = user;
+          } catch (err) {
+            console.error(`User ${userId} yüklenemedi:`, err);
+          }
+        })
+      );
+      
+      if (Object.keys(newOwners).length > 0) {
+        setOwners(prev => ({ ...prev, ...newOwners }));
+      }
+    };
+
+    loadOwners();
+  }, [tools]); // tools değiştiğinde çalışır
 
   // Rezervasyon durumunu belirle
   const getReservationStatus = (reservation: Reservation) => {
@@ -164,6 +205,9 @@ export default function Reservations({ reservations, loading = false, currentUse
       <div className="space-y-4">
         {reservations.map((reservation) => {
           const tool = tools[reservation.tool_id];
+          // YENİ: Sahibin bilgisini al
+          const owner = tool ? owners[tool.user_id] : null;
+          
           const status = getReservationStatus(reservation);
           const StatusIcon = status.icon;
 
@@ -225,7 +269,7 @@ export default function Reservations({ reservations, loading = false, currentUse
                   Oluşturuldu: {new Date(reservation.created_at).toLocaleDateString('tr-TR')}
                 </p>
 
-                {/* Tamamla Butonu - Aktif veya Beklemede rezervasyonlar için */}
+                {/* Tamamla Butonu */}
                 {(status.label === 'Aktif' || status.label === 'Beklemede') && (
                   <button
                     onClick={() => handleFinishReservation(reservation.reservation_id)}
@@ -246,13 +290,14 @@ export default function Reservations({ reservations, loading = false, currentUse
                   </button>
                 )}
 
-                {/* Değerlendirme Butonu - Tamamlanmış rezervasyonlar için */}
+                {/* Değerlendirme Butonu */}
                 {status.label === 'Tamamlandı' && tool && !reviewedReservations.has(reservation.reservation_id) && (
                   <button
                     onClick={() => openReviewModal(
                       reservation.reservation_id,
                       tool.tool_name,
-                      `Kullanıcı #${tool.user_id}`,
+                      // DÜZELTME BURADA: Eğer isim yüklendiyse ismi yaz, yoksa ID yaz
+                      owner ? owner.user_name : `Kullanıcı #${tool.user_id}`,
                       tool.user_id
                     )}
                     className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"

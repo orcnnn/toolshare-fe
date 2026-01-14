@@ -30,28 +30,14 @@ export default function Leaderboard() {
   const [error, setError] = useState<string | null>(null);
   const [activeTab, setActiveTab] = useState<'top' | 'active' | 'dual'>('top');
 
-  // Verileri yükle - sessionStorage cache ile
+  // Verileri yükle - CACHE OLMADAN (Her açılışta taze veri)
   useEffect(() => {
     const loadLeaderboardData = async () => {
-      // Önce cache'i kontrol et
-      const cachedData = sessionStorage.getItem('leaderboard_cache');
-      const cacheTime = sessionStorage.getItem('leaderboard_cache_time');
       
-      // Cache 5 dakikadan yeni ise kullan
-      if (cachedData && cacheTime) {
-        const cacheAge = Date.now() - parseInt(cacheTime);
-        if (cacheAge < 5 * 60 * 1000) { // 5 dakika
-          const parsed = JSON.parse(cachedData);
-          setTopUsers(parsed.topUsers || []);
-          setAllActiveUsers(parsed.allActiveUsers || []);
-          setDualRoleUsers(parsed.dualRoleUsers || []);
-          setLoading(false);
-          return;
-        }
-      }
-
+      // Cache kontrolü kaldırıldı. Direkt yüklemeye başlıyoruz.
       setLoading(true);
       setError(null);
+      
       try {
         const [top, active, dual] = await Promise.all([
           analyticsApi.getTopUsers().catch(err => {
@@ -67,17 +53,13 @@ export default function Leaderboard() {
             return [];
           }),
         ]);
+        
         setTopUsers(top || []);
         setAllActiveUsers(active || []);
         setDualRoleUsers(dual || []);
         
-        // Cache'e kaydet
-        sessionStorage.setItem('leaderboard_cache', JSON.stringify({
-          topUsers: top || [],
-          allActiveUsers: active || [],
-          dualRoleUsers: dual || [],
-        }));
-        sessionStorage.setItem('leaderboard_cache_time', Date.now().toString());
+        // Cache kaydetme işlemi de kaldırıldı.
+        
       } catch (err) {
         console.error('Leaderboard verisi yükleme hatası:', err);
         setError('Liderlik tablosu verileri yüklenemedi');
@@ -87,7 +69,7 @@ export default function Leaderboard() {
     };
 
     loadLeaderboardData();
-  }, []);
+  }, []); // [] dependency array sayesinde sayfa ilk açıldığında 1 kez çalışır (her açılışta)
 
   // Rozet render et
   const renderMedal = (rank: number) => {
@@ -107,7 +89,7 @@ export default function Leaderboard() {
     return (
       <div className="flex flex-col items-center justify-center h-96 text-gray-400">
         <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
-        <p>Liderlik tablosu yükleniyor...</p>
+        <p>Liderlik tablosu güncelleniyor...</p>
       </div>
     );
   }
@@ -199,7 +181,7 @@ export default function Leaderboard() {
         </div>
       )}
       
-      {/* Aktif Üyeler */}
+      {/* Aktif Üyeler - Sadece activeTab 'active' ise göster */}
       {activeTab === 'active' && (
         <div className="space-y-3">
           {groupedUsers.length > 0 ? (
@@ -230,7 +212,6 @@ export default function Leaderboard() {
                       )}
 
                       {/* Kiralayan (Lender) Kontrolü */}
-                      {/* Not: Veritabanınızda 'Lender' yerine başka bir keyword varsa burayı güncelleyin */}
                       {user.all_activities.includes('Lender') && (
                         <span className="inline-flex items-center gap-1 text-xs px-2 py-1 rounded-full bg-purple-100 text-purple-700">
                           <span>🟣</span>
@@ -244,11 +225,11 @@ export default function Leaderboard() {
               </div>
             ))
           ) : (
-      <div className="text-center py-8 text-gray-400">
-                    <Flame className="w-12 h-12 mx-auto mb-2 opacity-30" />
-                    <p>Henüz veri bulunmamaktadır</p>
-                  </div>
-                )}
+            <div className="text-center py-8 text-gray-400">
+              <Flame className="w-12 h-12 mx-auto mb-2 opacity-30" />
+              <p>Henüz veri bulunmamaktadır</p>
+            </div>
+          )}
         </div>
       )}  
 
