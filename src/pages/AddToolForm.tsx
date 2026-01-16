@@ -1,9 +1,7 @@
 // src/pages/AddToolForm.tsx
-import React, { useState, ChangeEvent, FormEvent } from 'react';
-import { X, Wrench, AlertCircle } from 'lucide-react';
-import { Tool, ToolCreate, toolApi } from '../services/api';
-
-import { ChevronDown } from 'lucide-react';
+import React, { useState, useEffect, ChangeEvent, FormEvent } from 'react';
+import { X, Wrench, AlertCircle, ChevronDown } from 'lucide-react';
+import { Tool, ToolCreate, toolApi, Category, categoryApi } from '../services/api';
 
 interface AddToolFormProps {
   userId: number; // Aktif kullanıcı ID'si
@@ -11,22 +9,29 @@ interface AddToolFormProps {
   onCancel: () => void;
 }
 
-// SQL verisinden alınan sabit kategoriler
-const CATEGORIES = [
-  { id: 1, name: 'Elektrikli Aletler' },
-  { id: 2, name: 'El Aletleri' },
-  { id: 3, name: 'Ölçüm Aletleri' },
-  { id: 4, name: 'Boya & Dekorasyon' },
-  { id: 5, name: 'Pnömatik Aletler' },
-  { id: 6, name: 'Genel Ekipman' }
-];
-
 export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProps) {
   const [toolName, setToolName] = useState('');
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
   const [selectedCategoryId, setSelectedCategoryId] = useState("");
+  
+  // Kategorileri backend'den çek
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await categoryApi.getAll();
+        setCategories(data);
+      } catch (err) {
+        console.error('Kategoriler yüklenemedi:', err);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+    loadCategories();
+  }, []);
 
   const handleSubmit = async (e: FormEvent<HTMLFormElement>) => {
     e.preventDefault();
@@ -136,24 +141,27 @@ export default function AddToolForm({ userId, onAdd, onCancel }: AddToolFormProp
               name="category_id"
               value={selectedCategoryId}
               onChange={handleChangeCatagory}
-              disabled={isSubmitting}
+              disabled={isSubmitting || categoriesLoading}
               className="w-full p-3 pr-10 bg-gray-50 border border-gray-200 rounded-xl text-gray-700 focus:ring-2 focus:ring-blue-500 outline-none transition-all appearance-none cursor-pointer"
             >
               <option value="" disabled className="text-gray-400">
-                Kategori Seçiniz
+                {categoriesLoading ? 'Kategoriler yükleniyor...' : 'Kategori Seçiniz'}
               </option>
-              {/* Mock Datadan Gelen Kategoriler */}
-              <option value="1">Elektrikli Aletler</option>
-              <option value="2">El Aletleri</option>
-              <option value="3">Ölçüm Aletleri</option>
-              <option value="4">Boya & Dekorasyon</option>
-              <option value="5">Pnömatik Aletler</option>
-              <option value="6">Genel Ekipman</option>
+              {/* Backend'den Gelen Kategoriler */}
+              {categories.map(cat => (
+                <option key={cat.category_id} value={cat.category_id}>
+                  {cat.category_name}
+                </option>
+              ))}
             </select>
 
             {/* Özel Aşağı Ok İkonu */}
             <div className="absolute inset-y-0 right-0 flex items-center pr-3 pointer-events-none text-gray-500">
-              <ChevronDown size={20} />
+              {categoriesLoading ? (
+                <div className="animate-spin rounded-full h-4 w-4 border-2 border-blue-500 border-t-transparent" />
+              ) : (
+                <ChevronDown size={20} />
+              )}
             </div>
           </div>
           

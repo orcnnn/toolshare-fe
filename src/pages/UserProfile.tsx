@@ -1,8 +1,14 @@
 // src/pages/UserProfile.tsx
 import React, { useEffect, useState } from 'react';
-import { Star, ShieldCheck, Clock, User as UserIcon, Wrench, LogOut, TrendingUp, Crown, Trash2, AlertTriangle } from 'lucide-react';
+import { Star, ShieldCheck, User as UserIcon, Wrench, LogOut, TrendingUp, Crown, Trash2, AlertTriangle, XCircle, CheckCircle, X } from 'lucide-react';
 import { ProfileMenuItem } from '../components/UI';
-import { User, Tool, Reservation, analyticsApi, LendingPerformance, userApi } from '../services/api';
+import { User, Tool, Reservation, analyticsApi, LendingPerformance, userApi, toolApi } from '../services/api';
+
+// Toast bildirim tipi
+interface ToastNotification {
+  message: string;
+  type: 'success' | 'error';
+}
 
 // Props için arayüz tanımlıyoruz
 interface UserProfileProps {
@@ -12,12 +18,60 @@ interface UserProfileProps {
   loading?: boolean;
   onLogout?: () => void;
   onAdminDashboard?: () => void;
+  onToolDeleted?: (toolId: number) => void;
 }
 
-export default function UserProfile({ user, userTools, userReservations, loading = false, onLogout, onAdminDashboard }: UserProfileProps) {
+export default function UserProfile({ user, userTools, userReservations, loading = false, onLogout, onAdminDashboard, onToolDeleted }: UserProfileProps) {
   const [lenderPerformance, setLenderPerformance] = useState<LendingPerformance[]>([]);
   const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const [deleteLoading, setDeleteLoading] = useState(false);
+  const [toast, setToast] = useState<ToastNotification | null>(null);
+  
+  // Alet silme state'leri
+  const [toolToDelete, setToolToDelete] = useState<Tool | null>(null);
+  const [toolDeleteLoading, setToolDeleteLoading] = useState(false);
+
+  // Toast göster
+  const showToast = (message: string, type: 'success' | 'error' = 'error') => {
+    setToast({ message, type });
+    setTimeout(() => setToast(null), 5000); // 5 saniye sonra kapat
+  };
+
+  // Silme modalı açıkken scroll'u kapat
+  useEffect(() => {
+    if (showDeleteConfirm || toolToDelete) {
+      document.body.style.overflow = 'hidden';
+    } else {
+      document.body.style.overflow = '';
+    }
+    
+    return () => {
+      document.body.style.overflow = '';
+    };
+  }, [showDeleteConfirm, toolToDelete]);
+
+  // Alet silme işlemi
+  const handleDeleteTool = async () => {
+    if (!toolToDelete) return;
+    
+    setToolDeleteLoading(true);
+    try {
+      await toolApi.delete(toolToDelete.tool_id);
+      showToast(`"${toolToDelete.tool_name}" başarıyla silindi.`, 'success');
+      onToolDeleted?.(toolToDelete.tool_id);
+      setToolToDelete(null);
+    } catch (err: any) {
+      console.error('Alet silme hatası:', err);
+      const errorMessage = err.message || 'Alet silinirken bir hata oluştu.';
+      if (errorMessage.includes('rezervasyon') || errorMessage.includes('reservation')) {
+        showToast('Bu alette aktif veya bekleyen rezervasyon var, silinemez.', 'error');
+      } else {
+        showToast(errorMessage, 'error');
+      }
+    } finally {
+      setToolDeleteLoading(false);
+    }
+  };
 
   // Alet performans verilerini yükle - sessionStorage cache ile
   useEffect(() => {
@@ -123,7 +177,7 @@ export default function UserProfile({ user, userTools, userReservations, loading
             {userTools.slice(0, 5).map(tool => (
               <div 
                 key={tool.tool_id}
-                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl"
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl group"
               >
                 <div className="flex items-center gap-3">
                   <div className="w-10 h-10 bg-blue-100 rounded-lg flex items-center justify-center">
@@ -131,9 +185,18 @@ export default function UserProfile({ user, userTools, userReservations, loading
                   </div>
                   <span className="font-medium text-gray-700">{tool.tool_name}</span>
                 </div>
-                <span className="text-xs text-gray-400">
-                  #{tool.tool_id}
-                </span>
+                <div className="flex items-center gap-2">
+                  <span className="text-xs text-gray-400">
+                    #{tool.tool_id}
+                  </span>
+                  <button
+                    onClick={() => setToolToDelete(tool)}
+                    className="p-1.5 text-gray-400 hover:text-red-500 hover:bg-red-50 rounded-lg transition-all opacity-0 group-hover:opacity-100"
+                    title="Aleti sil"
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
               </div>
             ))}
             {userTools.length > 5 && (
@@ -248,8 +311,11 @@ export default function UserProfile({ user, userTools, userReservations, loading
               Hesabı Silmek İstediğinize Emin Misiniz?
             </h3>
             
-            <p className="text-gray-500 text-center text-sm mb-6">
-              Bu işlem geri alınamaz. Hesabınız, tüm aletleriniz, rezervasyonlarınız ve değerlendirmeleriniz kalıcı olarak silinecektir.
+            <p className="text-gray-500 text-center text-sm mb-4">
+              Bu işlem geri alınamaz. Hesabınız, tüm aletleriniz ve değerlendirmeleriniz kalıcı olarak silinecektir.
+            </p>
+            <p className="text-amber-600 text-center text-xs bg-amber-50 p-2 rounded-lg mb-4">
+              ⚠️ Aktif/bekleyen rezervasyonunuz veya aletiniz varsa hesabınızı silemezsiniz.
             </p>
             
             <div className="flex gap-3">
@@ -267,10 +333,16 @@ export default function UserProfile({ user, userTools, userReservations, loading
                   try {
                     await userApi.delete(user.user_id);
                     // Başarılı silme sonrası çıkış yap
-                    onLogout?.();
-                  } catch (err) {
+                    showToast('Hesabınız başarıyla silindi.', 'success');
+                    setTimeout(() => onLogout?.(), 1500);
+                  } catch (err: any) {
                     console.error('Hesap silme hatası:', err);
-                    alert('Hesap silinirken bir hata oluştu.');
+                    const errorMessage = err.message || 'Hesap silinirken bir hata oluştu.';
+                    if (errorMessage.includes('rezervasyon') || errorMessage.includes('reservation')) {
+                      showToast('Aktif/bekleyen rezervasyonunuz veya aletiniz olduğu için hesabınız silinemiyor. Önce rezervasyonlarınızı tamamlayın veya iptal edin.', 'error');
+                    } else {
+                      showToast(errorMessage, 'error');
+                    }
                   } finally {
                     setDeleteLoading(false);
                     setShowDeleteConfirm(false);
@@ -293,6 +365,106 @@ export default function UserProfile({ user, userTools, userReservations, loading
               </button>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Alet Silme Onay Modalı */}
+      {toolToDelete && (
+        <div className="fixed inset-0 bg-black/50 backdrop-blur-sm z-50 flex items-center justify-center p-4">
+          <div className="bg-white rounded-2xl shadow-2xl max-w-md w-full p-6 animate-in zoom-in duration-200">
+            <div className="flex items-center justify-center w-16 h-16 mx-auto mb-4 bg-orange-100 rounded-full">
+              <Wrench className="w-8 h-8 text-orange-600" />
+            </div>
+            
+            <h3 className="text-xl font-bold text-gray-800 text-center mb-2">
+              Aleti Silmek İstediğinize Emin Misiniz?
+            </h3>
+            
+            <p className="text-gray-700 text-center font-medium mb-2">
+              "{toolToDelete.tool_name}"
+            </p>
+            
+            <p className="text-gray-500 text-center text-sm mb-4">
+              Bu işlem geri alınamaz. Alet ve tüm değerlendirmeleri kalıcı olarak silinecektir.
+            </p>
+            
+            <p className="text-amber-600 text-center text-xs bg-amber-50 p-2 rounded-lg mb-4">
+              ⚠️ Aktif veya bekleyen rezervasyonu olan aletler silinemez.
+            </p>
+            
+            <div className="flex gap-3">
+              <button
+                onClick={() => setToolToDelete(null)}
+                disabled={toolDeleteLoading}
+                className="flex-1 px-4 py-3 bg-gray-100 hover:bg-gray-200 text-gray-700 font-semibold rounded-xl transition-colors"
+              >
+                İptal
+              </button>
+              <button
+                onClick={handleDeleteTool}
+                disabled={toolDeleteLoading}
+                className="flex-1 px-4 py-3 bg-red-600 hover:bg-red-700 text-white font-semibold rounded-xl transition-colors flex items-center justify-center gap-2"
+              >
+                {toolDeleteLoading ? (
+                  <>
+                    <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                    Siliniyor...
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    Evet, Sil
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Toast Bildirimi */}
+      {toast && (
+        <div className={`fixed bottom-6 left-1/2 -translate-x-1/2 z-[100] flex items-center gap-3 px-5 py-4 rounded-2xl shadow-2xl border animate-in slide-in-from-bottom-5 duration-300 max-w-md ${
+          toast.type === 'error' 
+            ? 'bg-gradient-to-r from-red-50 to-rose-50 border-red-200' 
+            : 'bg-gradient-to-r from-green-50 to-emerald-50 border-green-200'
+        }`}>
+          {/* İkon */}
+          <div className={`flex-shrink-0 w-10 h-10 rounded-full flex items-center justify-center ${
+            toast.type === 'error' ? 'bg-red-100' : 'bg-green-100'
+          }`}>
+            {toast.type === 'error' ? (
+              <XCircle className="w-6 h-6 text-red-600" />
+            ) : (
+              <CheckCircle className="w-6 h-6 text-green-600" />
+            )}
+          </div>
+          
+          {/* Metin */}
+          <div className="flex-1">
+            <h4 className={`font-bold text-sm ${
+              toast.type === 'error' ? 'text-red-800' : 'text-green-800'
+            }`}>
+              {toast.type === 'error' ? 'İşlem Başarısız' : 'İşlem Başarılı'}
+            </h4>
+            <p className={`text-xs mt-0.5 leading-relaxed ${
+              toast.type === 'error' ? 'text-red-600' : 'text-green-600'
+            }`}>
+              {toast.message}
+            </p>
+          </div>
+
+          {/* Kapatma Butonu */}
+          <button 
+            onClick={() => setToast(null)} 
+            className={`flex-shrink-0 p-1 rounded-full transition-colors ${
+              toast.type === 'error' 
+                ? 'text-red-400 hover:text-red-600 hover:bg-red-100' 
+                : 'text-green-400 hover:text-green-600 hover:bg-green-100'
+            }`}
+          >
+            <X className="w-4 h-4" />
+          </button>
         </div>
       )}
     </div>

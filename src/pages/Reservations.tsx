@@ -1,6 +1,6 @@
 // src/pages/Reservations.tsx
 import React, { useEffect, useState } from 'react';
-import { Calendar, Wrench, Clock, CheckCircle, XCircle, Star } from 'lucide-react';
+import { Calendar, Wrench, Clock, CheckCircle, XCircle, Star, X } from 'lucide-react';
 // YENİ: 'User' tipini de import ettik
 import { Reservation, Tool, User, toolApi, userApi, reservationApi } from '../services/api';
 import ReviewModal from '../components/ReviewModal';
@@ -43,6 +43,8 @@ export default function Reservations({ reservations, loading = false, currentUse
   });
   // Tamamlama işlemi için loading state
   const [finishingReservation, setFinishingReservation] = useState<number | null>(null);
+  // İptal işlemi için loading state
+  const [cancellingReservation, setCancellingReservation] = useState<number | null>(null);
 
   // Kullanıcının yaptığı değerlendirmeleri yükle
   useEffect(() => {
@@ -96,6 +98,22 @@ export default function Reservations({ reservations, loading = false, currentUse
       alert('Rezervasyon tamamlanırken bir hata oluştu.');
     } finally {
       setFinishingReservation(null);
+    }
+  };
+
+  // Beklemedeki rezervasyonu iptal et
+  const handleCancelReservation = async (reservationId: number) => {
+    if (!confirm('Bu rezervasyonu iptal etmek istediğinize emin misiniz?')) return;
+    
+    setCancellingReservation(reservationId);
+    try {
+      await reservationApi.cancel(reservationId);
+      // Sayfa yenilenerek güncel liste gösterilsin
+      window.location.reload();
+    } catch (err: any) {
+      console.error('Rezervasyon iptal hatası:', err);
+      alert(err.message || 'Rezervasyon iptal edilirken bir hata oluştu.');
+      setCancellingReservation(null);
     }
   };
 
@@ -269,51 +287,96 @@ export default function Reservations({ reservations, loading = false, currentUse
                   Oluşturuldu: {new Date(reservation.created_at).toLocaleDateString('tr-TR')}
                 </p>
 
-                {/* Tamamla Butonu */}
-                {(status.label === 'Aktif' || status.label === 'Beklemede') && (
-                  <button
-                    onClick={() => handleFinishReservation(reservation.reservation_id)}
-                    disabled={finishingReservation === reservation.reservation_id}
-                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                  >
-                    {finishingReservation === reservation.reservation_id ? (
-                      <>
-                        <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
-                        Tamamlanıyor...
-                      </>
-                    ) : (
-                      <>
-                        <CheckCircle className="w-4 h-4" />
-                        Tamamla
-                      </>
-                    )}
-                  </button>
-                )}
+                {/* Aksiyon Butonları */}
+                <div className="flex flex-wrap gap-2 mt-3">
+                  {/* Aktif için Tamamla Butonu */}
+                  {status.label === 'Aktif' && (
+                    <button
+                      onClick={() => handleFinishReservation(reservation.reservation_id)}
+                      disabled={finishingReservation === reservation.reservation_id}
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-green-500 to-emerald-600 hover:from-green-600 hover:to-emerald-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {finishingReservation === reservation.reservation_id ? (
+                        <>
+                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                          Tamamlanıyor...
+                        </>
+                      ) : (
+                        <>
+                          <CheckCircle className="w-4 h-4" />
+                          Tamamla
+                        </>
+                      )}
+                    </button>
+                  )}
+
+                  {/* Beklemede için Bırak Butonu */}
+                  {status.label === 'Beklemede' && (
+                    <button
+                      onClick={() => handleCancelReservation(reservation.reservation_id)}
+                      disabled={cancellingReservation === reservation.reservation_id}
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-red-500 to-rose-600 hover:from-red-600 hover:to-rose-700 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                    >
+                      {cancellingReservation === reservation.reservation_id ? (
+                        <>
+                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-white border-t-transparent"></span>
+                          İptal Ediliyor...
+                        </>
+                      ) : (
+                        <>
+                          <X className="w-4 h-4" />
+                          İptal Et
+                        </>
+                      )}
+                    </button>
+                  )}
+                </div>
 
                 {/* Değerlendirme Butonu */}
                 {status.label === 'Tamamlandı' && tool && !reviewedReservations.has(reservation.reservation_id) && (
-                  <button
-                    onClick={() => openReviewModal(
-                      reservation.reservation_id,
-                      tool.tool_name,
-                      // DÜZELTME BURADA: Eğer isim yüklendiyse ismi yaz, yoksa ID yaz
-                      owner ? owner.user_name : `Kullanıcı #${tool.user_id}`,
-                      tool.user_id
-                    )}
-                    className="mt-3 flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
-                  >
-                    <Star className="w-4 h-4" />
-                    Değerlendir
-                  </button>
+                  <div className="mt-3 flex items-center gap-3 flex-wrap">
+                    {/* Alet Sahibi */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                        {owner?.user_name?.charAt(0).toUpperCase() || '?'}
+                      </div>
+                      <span className="font-medium">{owner?.user_name || `Kullanıcı #${tool.user_id}`}</span>
+                    </div>
+                    
+                    {/* Değerlendir Butonu */}
+                    <button
+                      onClick={() => openReviewModal(
+                        reservation.reservation_id,
+                        tool.tool_name,
+                        owner ? owner.user_name : `Kullanıcı #${tool.user_id}`,
+                        tool.user_id
+                      )}
+                      className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600 text-white text-sm font-semibold rounded-xl shadow-md hover:shadow-lg transition-all"
+                    >
+                      <Star className="w-4 h-4" />
+                      Değerlendir
+                    </button>
+                  </div>
                 )}
                 {reviewedReservations.has(reservation.reservation_id) && (
-                  <div className="mt-3 flex items-center gap-2 bg-green-50 text-green-700 text-sm font-medium px-3 py-2 rounded-xl">
-                    <CheckCircle className="w-4 h-4" />
-                    <span>Değerlendirildi</span>
-                    <div className="flex items-center gap-0.5 ml-1">
-                      {[...Array(reviewedReservations.get(reservation.reservation_id))].map((_, i) => (
-                        <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
-                      ))}
+                  <div className="mt-3 flex items-center gap-3 flex-wrap">
+                    {/* Alet Sahibi */}
+                    <div className="flex items-center gap-2 text-sm text-gray-600">
+                      <div className="w-6 h-6 rounded-full bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white text-xs font-bold">
+                        {owner?.user_name?.charAt(0).toUpperCase() || '?'}
+                      </div>
+                      <span className="font-medium">{owner?.user_name || `Kullanıcı #${tool?.user_id}`}</span>
+                    </div>
+                    
+                    {/* Değerlendirildi Badge */}
+                    <div className="flex items-center gap-2 bg-green-50 text-green-700 text-sm font-medium px-3 py-2 rounded-xl">
+                      <CheckCircle className="w-4 h-4" />
+                      <span>Değerlendirildi</span>
+                      <div className="flex items-center gap-0.5 ml-1">
+                        {[...Array(reviewedReservations.get(reservation.reservation_id))].map((_, i) => (
+                          <Star key={i} className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+                        ))}
+                      </div>
                     </div>
                   </div>
                 )}

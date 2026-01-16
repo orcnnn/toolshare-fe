@@ -231,7 +231,27 @@ export interface SystemStatisticsSummary {
 async function handleResponse<T>(response: Response): Promise<T> {
   if (!response.ok) {
     const error = await response.json().catch(() => ({ detail: 'Bir hata oluştu' }));
-    throw new Error(error.detail || 'API isteği başarısız');
+    
+    // Error detail'i düzgün string'e çevir
+    let errorMessage = 'API isteği başarısız';
+    
+    if (error.detail) {
+      if (typeof error.detail === 'string') {
+        // Normal string hata mesajı
+        errorMessage = error.detail;
+      } else if (Array.isArray(error.detail)) {
+        // FastAPI validation error formatı: [{loc: [...], msg: "...", type: "..."}]
+        errorMessage = error.detail.map((e: any) => e.msg || e.message || JSON.stringify(e)).join(', ');
+      } else if (typeof error.detail === 'object') {
+        // Obje formatında hata
+        errorMessage = error.detail.msg || error.detail.message || JSON.stringify(error.detail);
+      }
+    }
+    
+    // "Value error, " prefix'ini temizle (Pydantic validation mesajları)
+    errorMessage = errorMessage.replace(/^Value error,\s*/i, '');
+    
+    throw new Error(errorMessage);
   }
   return response.json();
 }
@@ -300,7 +320,14 @@ export const userApi = {
   },
 
   delete: async (userId: number): Promise<User> => {
+    // Normal silme - aktif rezervasyon varsa trigger engeller
     const res = await fetch(`${API_BASE_URL}/USER/${userId}`, { method: 'DELETE' });
+    return handleResponse<User>(res);
+  },
+
+  forceDelete: async (userId: number): Promise<User> => {
+    // Admin zorla silme - rezervasyonları önce siler, sonra kullanıcıyı siler
+    const res = await fetch(`${API_BASE_URL}/USER/${userId}?force=true`, { method: 'DELETE' });
     return handleResponse<User>(res);
   },
 };
@@ -351,6 +378,11 @@ export const toolApi = {
   getAll: async (): Promise<Tool[]> => {
     const res = await fetch(`${API_BASE_URL}/TOOL/`);
     return handleResponse<Tool[]>(res);
+  },
+
+  delete: async (toolId: number): Promise<Tool> => {
+    const res = await fetch(`${API_BASE_URL}/TOOL/${toolId}`, { method: 'DELETE' });
+    return handleResponse<Tool>(res);
   },
 
   getById: async (toolId: number): Promise<Tool> => {
@@ -425,6 +457,13 @@ export const reservationApi = {
   finish: async (reservationId: number): Promise<Reservation> => {
     const res = await fetch(`${API_BASE_URL}/RESERVATION/${reservationId}/finish`, {
       method: 'PATCH',
+    });
+    return handleResponse<Reservation>(res);
+  },
+
+  cancel: async (reservationId: number): Promise<Reservation> => {
+    const res = await fetch(`${API_BASE_URL}/RESERVATION/${reservationId}`, {
+      method: 'DELETE',
     });
     return handleResponse<Reservation>(res);
   },

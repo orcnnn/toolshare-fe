@@ -12,11 +12,13 @@ import {
   statisticsApi, 
   viewsApi,
   userApi,
+  toolApi,
   SystemStatisticsSummary, 
   AllActiveUsersStats,
   DualRoleUsersStats,
   LendersOnlyStats,
-  RecentReservationView 
+  RecentReservationView,
+  ToolWithStatus
 } from '../services/api';
 
 import { API_BASE_URL } from '../services/api.ts'; // Dosya yoluna dikkat et!
@@ -44,6 +46,13 @@ export default function AdminDashboard() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState(null);
 
+  // Tool Silme State'leri
+  const [isToolDeleteModalOpen, setIsToolDeleteModalOpen] = useState(false);
+  const [toolDeleteInputId, setToolDeleteInputId] = useState("");
+  const [isToolDeleting, setIsToolDeleting] = useState(false);
+  const [toolDeleteError, setToolDeleteError] = useState<string | null>(null);
+  const [allTools, setAllTools] = useState<ToolWithStatus[]>([]);
+
 
   // Burada <ToastNotification | null> diyerek TypeScript'e 
   // "Bu kutuya ya null koyacağım ya da mesaj objesi koyacağım" diyoruz.
@@ -58,6 +67,39 @@ export default function AdminDashboard() {
   const userToBeDeleted = activeUsers.find(
     (u) => u.user_id === Number(deleteInputId)
   );
+
+  // Tool silme için helper
+  const toolToBeDeleted = allTools.find(
+    (t) => t.tool_id === Number(toolDeleteInputId)
+  );
+
+  // --- Tool Silme İşlemi ---
+  const handleToolDeleteSubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!toolDeleteInputId) return;
+
+    setIsToolDeleting(true);
+    setToolDeleteError(null);
+
+    try {
+      await toolApi.delete(Number(toolDeleteInputId));
+
+      // Başarılı Oldu:
+      setIsToolDeleteModalOpen(false);
+      setToolDeleteInputId("");
+      
+      // Verileri yenile
+      await fetchDashboardData(true); 
+      
+      showToast(`Alet (ID: ${toolDeleteInputId}) başarıyla silindi.`, 'success');
+
+    } catch (err: any) {
+      console.error("Tool silme hatası:", err);
+      setToolDeleteError(err.message || "Silme işlemi sırasında bir hata oluştu.");
+    } finally {
+      setIsToolDeleting(false);
+    }
+  };
 
 
   // Sayfada kaç kişi gösterileceği (Başlangıç: 10)
@@ -117,6 +159,7 @@ export default function AdminDashboard() {
           setDualRoleUsers(parsed.dualRoleUsers || []);
           setLendersOnly(parsed.lendersOnly || []);
           setRecentReservations(parsed.recentReservations || []);
+          setAllTools(parsed.allTools || []);
           setLoading(false);
           return;
         }
@@ -124,18 +167,20 @@ export default function AdminDashboard() {
     }
 
     try {
-      const [summaryData, usersData, dualRoleData, lendersOnlyData, reservationsData] = await Promise.all([
+      const [summaryData, usersData, dualRoleData, lendersOnlyData, reservationsData, toolsData] = await Promise.all([
         statisticsApi.getSystemSummary(),
         statisticsApi.getAllActiveUsers(),
         statisticsApi.getDualRoleUsers(),
         statisticsApi.getLendersOnly(),
         viewsApi.getRecentReservations(),
+        toolApi.getByStatus('all'),
       ]);
       setSummary(summaryData);
       setActiveUsers(usersData);
       setDualRoleUsers(dualRoleData);
       setLendersOnly(lendersOnlyData);
       setRecentReservations(reservationsData);
+      setAllTools(toolsData);
       
       // Cache'e kaydet
       sessionStorage.setItem('admin_dashboard_cache', JSON.stringify({
@@ -144,6 +189,7 @@ export default function AdminDashboard() {
         dualRoleUsers: dualRoleData,
         lendersOnly: lendersOnlyData,
         recentReservations: reservationsData,
+        allTools: toolsData,
       }));
       sessionStorage.setItem('admin_dashboard_cache_time', Date.now().toString());
     } catch (err) {
@@ -167,7 +213,8 @@ export default function AdminDashboard() {
     setDeleteError(null);
 
     try {
-      await userApi.delete(Number(deleteInputId));
+      // Admin panelinden silme - force mode ile tüm rezervasyonlar da silinir
+      await userApi.forceDelete(Number(deleteInputId));
 
       // Başarılı Oldu:
       setIsDeleteModalOpen(false);
@@ -622,7 +669,7 @@ export default function AdminDashboard() {
         </div>
       </div>
 
-        {/* --- SİLME MODALI --- */}
+        {/* --- KULLANICI SİLME MODALI --- */}
       {isDeleteModalOpen && (
         <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
           <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
@@ -640,8 +687,8 @@ export default function AdminDashboard() {
               <div className="bg-red-50 border border-red-200 rounded-xl p-4 flex items-start gap-3">
                 <AlertTriangle className="w-5 h-5 text-red-600 flex-shrink-0 mt-0.5" />
                 <div className="text-sm text-red-800">
-                  <p className="font-bold">Dikkat: Bu işlem geri alınamaz!</p>
-                  <p className="mt-1">Kullanıcı ve tüm verileri kalıcı olarak silinecektir.</p>
+                  <p className="font-bold">⚠️ MUHTAR YETKİSİ - Bu işlem geri alınamaz!</p>
+                  <p className="mt-1">Kullanıcı, tüm aletleri, <span className="font-bold text-red-700">aktif rezervasyonlar dahil</span> tüm verileri kalıcı olarak silinecektir.</p>
                 </div>
               </div>
 
@@ -681,6 +728,89 @@ export default function AdminDashboard() {
         </div>
       )}
 
+      {/* --- ALET SİLME MODALI --- */}
+      {isToolDeleteModalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/50 backdrop-blur-sm animate-fade-in">
+          <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden">
+            <div className="px-6 py-4 border-b border-gray-100 flex justify-between items-center bg-orange-50">
+              <h3 className="font-bold text-orange-700 flex items-center gap-2">
+                <Wrench className="w-5 h-5" />
+                Alet Silme
+              </h3>
+              <button onClick={() => { setIsToolDeleteModalOpen(false); setToolDeleteError(null); }} className="text-orange-400 hover:text-orange-600">
+                <X className="w-5 h-5" />
+              </button>
+            </div>
+
+            <form onSubmit={handleToolDeleteSubmit} className="p-6 space-y-4">
+              <div className="bg-orange-50 border border-orange-200 rounded-xl p-4 flex items-start gap-3">
+                <AlertTriangle className="w-5 h-5 text-orange-600 flex-shrink-0 mt-0.5" />
+                <div className="text-sm text-orange-800">
+                  <p className="font-bold">Dikkat: Bu işlem geri alınamaz!</p>
+                  <p className="mt-1">Alet ve tüm rezervasyonları kalıcı olarak silinecektir.</p>
+                  <p className="mt-1 text-orange-600 font-medium">Aktif rezervasyonu olan aletler silinemez!</p>
+                </div>
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 mb-1">Silinecek Alet ID</label>
+                <input 
+                  type="number" 
+                  required
+                  value={toolDeleteInputId}
+                  onChange={(e) => { setToolDeleteInputId(e.target.value); setToolDeleteError(null); }}
+                  placeholder="Örn: 5"
+                  className="w-full p-3 bg-gray-50 border border-gray-200 rounded-xl focus:ring-2 focus:ring-orange-500 outline-none"
+                />
+              </div>
+
+              {toolDeleteInputId && (
+                <div className={`p-3 rounded-lg border text-sm ${
+                  toolToBeDeleted ? 'bg-emerald-50 border-emerald-100 text-emerald-700' : 'bg-gray-50 border-gray-200 text-gray-500'
+                }`}>
+                  {toolToBeDeleted ? (
+                    <div className="space-y-1">
+                      <div className="flex items-center justify-between">
+                        <span className="font-medium">Alet:</span>
+                        <span className="font-bold">{toolToBeDeleted.tool_name}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Sahip:</span>
+                        <span>{toolToBeDeleted.owner_name}</span>
+                      </div>
+                      <div className="flex items-center justify-between text-xs">
+                        <span>Durum:</span>
+                        <span className={`px-2 py-0.5 rounded-full ${
+                          toolToBeDeleted.status === 'Şu An Kirada' ? 'bg-red-100 text-red-700' :
+                          toolToBeDeleted.status === 'Şu An Müsait' ? 'bg-green-100 text-green-700' :
+                          'bg-gray-100 text-gray-600'
+                        }`}>{toolToBeDeleted.status}</span>
+                      </div>
+                    </div>
+                  ) : (
+                    <div className="flex items-center justify-between">
+                      <span className="font-medium">Alet:</span>
+                      <span className="font-bold">Bulunamadı</span>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {toolDeleteError && (
+                <div className="text-red-600 text-sm font-medium text-center bg-red-50 p-2 rounded">{toolDeleteError}</div>
+              )}
+
+              <div className="flex gap-3 mt-6">
+                <button type="button" onClick={() => { setIsToolDeleteModalOpen(false); setToolDeleteError(null); }} className="flex-1 py-2.5 bg-gray-100 text-gray-700 font-medium rounded-xl hover:bg-gray-200">Vazgeç</button>
+                <button type="submit" disabled={isToolDeleting || !toolDeleteInputId} className="flex-1 py-2.5 bg-orange-600 text-white font-medium rounded-xl hover:bg-orange-700 shadow-lg shadow-orange-200 flex items-center justify-center gap-2 disabled:opacity-50">
+                  {isToolDeleting ? <><Loader2 className="w-4 h-4 animate-spin" /> Siliniyor...</> : "Kalıcı Sil"}
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* --- YENİ: PROFESYONEL TOAST BİLDİRİM --- */}
       {toast && (
         <div className={`fixed bottom-6 right-6 z-[100] flex items-center gap-3 px-4 py-3 rounded-xl shadow-lg border border-gray-100 bg-white animate-bounce-in transition-all ${
@@ -707,6 +837,87 @@ export default function AdminDashboard() {
           </button>
         </div>
         )}
+      </div>
+
+      {/* Aletler Listesi */}
+      <div className="bg-white rounded-2xl shadow-sm p-5 border border-gray-100">
+        <div className="flex justify-between items-center mb-4">
+          <h3 className="font-bold text-gray-800 flex items-center gap-2">
+            <Wrench className="w-5 h-5 text-emerald-500" />
+            Sistemdeki Aletler
+            <span className="text-xs font-normal text-gray-400 ml-1">
+              ({allTools.length})
+            </span>
+          </h3>
+          
+          <button
+            onClick={() => setIsToolDeleteModalOpen(true)}
+            className="flex items-center gap-1.5 px-3 py-1.5 text-xs font-medium text-orange-600 bg-orange-50 hover:bg-orange-100 rounded-lg transition-colors border border-orange-100"
+          >
+            <Trash2 className="w-3.5 h-3.5" />
+            Alet Sil
+          </button>
+        </div>
+
+        <div className="space-y-2 max-h-[400px] overflow-y-auto pr-2">
+          {allTools.length > 0 ? (
+            allTools.slice(0, 20).map((tool) => (
+              <div 
+                key={tool.tool_id}
+                className="flex items-center justify-between p-3 bg-gray-50 rounded-xl hover:bg-gray-100 transition-colors group"
+              >
+                <div className="flex items-center gap-3">
+                  <div className={`w-10 h-10 flex-shrink-0 rounded-lg flex items-center justify-center ${
+                    tool.status === 'Şu An Kirada' ? 'bg-red-100' :
+                    tool.status === 'Şu An Müsait' ? 'bg-green-100' :
+                    'bg-gray-200'
+                  }`}>
+                    <Wrench className={`w-5 h-5 ${
+                      tool.status === 'Şu An Kirada' ? 'text-red-600' :
+                      tool.status === 'Şu An Müsait' ? 'text-green-600' :
+                      'text-gray-500'
+                    }`} />
+                  </div>
+                  <div>
+                    <span className="font-medium text-gray-700 block truncate max-w-[150px]">
+                      {tool.tool_name}
+                    </span>
+                    <span className="text-xs text-gray-400">
+                      #{tool.tool_id} • {tool.owner_name}
+                    </span>
+                  </div>
+                </div>
+                <div className="flex items-center gap-2">
+                  <span className={`text-[10px] px-2 py-1 rounded-full font-bold ${
+                    tool.status === 'Şu An Kirada' ? 'bg-red-100 text-red-700 border border-red-200' :
+                    tool.status === 'Şu An Müsait' ? 'bg-green-100 text-green-700 border border-green-200' :
+                    'bg-gray-100 text-gray-600 border border-gray-200'
+                  }`}>
+                    {tool.status === 'Şu An Kirada' ? 'Kirada' : 
+                     tool.status === 'Şu An Müsait' ? 'Müsait' : 'Yeni'}
+                  </span>
+                  <button
+                    onClick={() => {
+                      setToolDeleteInputId(tool.tool_id.toString());
+                      setIsToolDeleteModalOpen(true);
+                    }}
+                    className="opacity-0 group-hover:opacity-100 p-1.5 text-orange-400 hover:text-orange-600 hover:bg-orange-50 rounded-lg transition-all"
+                    title={`${tool.tool_name} aletini sil`}
+                  >
+                    <Trash2 className="w-4 h-4" />
+                  </button>
+                </div>
+              </div>
+            ))
+          ) : (
+            <p className="text-center text-gray-400 py-8">Henüz alet yok</p>
+          )}
+          {allTools.length > 20 && (
+            <p className="text-center text-sm text-gray-400 pt-2">
+              +{allTools.length - 20} alet daha
+            </p>
+          )}
+        </div>
       </div>
 
       {/* System Health */}

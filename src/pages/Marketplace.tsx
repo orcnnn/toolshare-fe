@@ -1,7 +1,7 @@
 // src/pages/Marketplace.tsx
 import React, { ChangeEvent, useEffect, useState } from 'react';
-import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle, TrendingUp, User as UserIcon, ChevronDown, X } from 'lucide-react';
-import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi, analyticsApi, AvailableToolSearch } from '../services/api';
+import { Search, Star, Hammer, Wrench, Filter, Clock, Package, CheckCircle, TrendingUp, User as UserIcon, ChevronDown, X, Tags } from 'lucide-react';
+import { Tool, ToolWithStatus, ToolStatusType, User, userApi, toolApi, analyticsApi, AvailableToolSearch, Category, categoryApi } from '../services/api';
 import ReservationModal from '../components/ReservationModal';
 
 // Placeholder görseller
@@ -70,11 +70,31 @@ export default function Marketplace({
   // Bana ait filtresi
   const [showOnlyMyTools, setShowOnlyMyTools] = useState(false);
   
+  // Kategori filtresi
+  const [categories, setCategories] = useState<Category[]>([]);
+  const [selectedCategoryFilter, setSelectedCategoryFilter] = useState<number | null>(null);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  
   // Filtreleme dropdown state
   const [filterDropdownOpen, setFilterDropdownOpen] = useState(false);
 
   // YENİ: Verileri tazelemeyi tetikleyecek sayaç
   const [refreshTrigger, setRefreshTrigger] = useState(0);
+
+  // Kategorileri backend'den yükle
+  useEffect(() => {
+    const loadCategories = async () => {
+      try {
+        const data = await categoryApi.getAll();
+        setCategories(data);
+      } catch (err) {
+        console.error('Kategoriler yüklenemedi:', err);
+      } finally {
+        setCategoriesLoading(false);
+      }
+    };
+    loadCategories();
+  }, []);
 
   // YENİ: Cache'i temizleyip verileri yenileyen fonksiyon
   const refreshData = () => {
@@ -202,7 +222,7 @@ export default function Marketplace({
     }
   }, [tools]); // Sahipler çok sık değişmediği için buraya refreshTrigger eklemedik, performans için.
   
-  // Filtreleme: status filter + search + bana ait
+  // Filtreleme: status filter + search + bana ait + kategori
   const displayTools = statusFilter === 'all' ? tools : filteredByStatus;
   const filteredTools = displayTools.filter(tool => {
     const matchesSearch = tool.tool_name.toLowerCase().includes(searchTerm.toLowerCase());
@@ -211,6 +231,12 @@ export default function Marketplace({
     if (showOnlyMyTools) {
       const toolOwnerId = 'user_id' in tool ? tool.user_id : (tool as ToolWithStatus).owner_id;
       if (toolOwnerId !== currentUserId) return false;
+    }
+    
+    // Kategori filtresi
+    if (selectedCategoryFilter !== null) {
+      const toolCategoryId = tool.category_id;
+      if (toolCategoryId !== selectedCategoryFilter) return false;
     }
     
     return matchesSearch;
@@ -344,7 +370,7 @@ export default function Marketplace({
               <button
                 onClick={() => setFilterDropdownOpen(!filterDropdownOpen)}
                 className={`flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium transition-all ${
-                  (showOnlyMyTools || statusFilter !== 'all')
+                  (showOnlyMyTools || statusFilter !== 'all' || selectedCategoryFilter !== null)
                     ? 'bg-blue-600 text-white shadow-md' 
                     : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                 }`}
@@ -418,12 +444,53 @@ export default function Marketplace({
                       </div>
                     </div>
                     
-                    {(showOnlyMyTools || statusFilter !== 'all') && (
+                    {/* Kategori Filtresi */}
+                    <div className="p-3 border-t border-gray-100">
+                      <p className="text-xs font-semibold text-gray-500 uppercase tracking-wide mb-2">
+                        <Tags className="w-3 h-3 inline mr-1" />
+                        Kategori
+                      </p>
+                      {categoriesLoading ? (
+                        <div className="flex items-center justify-center py-2">
+                          <span className="animate-spin rounded-full h-4 w-4 border-2 border-teal-500 border-t-transparent mr-2"></span>
+                          <span className="text-xs text-gray-500">Yükleniyor...</span>
+                        </div>
+                      ) : (
+                        <div className="flex flex-wrap gap-1.5 max-h-32 overflow-y-auto">
+                          <button
+                            onClick={() => setSelectedCategoryFilter(null)}
+                            className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                              selectedCategoryFilter === null
+                                ? 'bg-teal-600 text-white'
+                                : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                            }`}
+                          >
+                            Tümü
+                          </button>
+                          {categories.map(cat => (
+                            <button
+                              key={cat.category_id}
+                              onClick={() => setSelectedCategoryFilter(cat.category_id)}
+                              className={`px-2.5 py-1.5 rounded-lg text-xs font-medium transition-all ${
+                                selectedCategoryFilter === cat.category_id
+                                  ? 'bg-teal-600 text-white'
+                                  : 'bg-teal-50 text-teal-700 hover:bg-teal-100'
+                              }`}
+                            >
+                              {cat.category_name}
+                            </button>
+                          ))}
+                        </div>
+                      )}
+                    </div>
+                    
+                    {(showOnlyMyTools || statusFilter !== 'all' || selectedCategoryFilter !== null) && (
                       <div className="p-3 border-t border-gray-100">
                         <button
                           onClick={() => {
                             setShowOnlyMyTools(false);
                             setStatusFilter('all');
+                            setSelectedCategoryFilter(null);
                           }}
                           className="w-full flex items-center justify-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-red-600 bg-red-50 hover:bg-red-100 transition-all"
                         >
@@ -438,7 +505,7 @@ export default function Marketplace({
             </div>
           )}
           
-          {!useAdvancedSearch && (showOnlyMyTools || statusFilter !== 'all') && (
+          {!useAdvancedSearch && (showOnlyMyTools || statusFilter !== 'all' || selectedCategoryFilter !== null) && (
             <div className="flex gap-1.5 flex-wrap">
               {showOnlyMyTools && (
                 <span className="inline-flex items-center gap-1 px-2 py-1 bg-blue-100 text-blue-700 text-xs font-medium rounded-full">
@@ -457,6 +524,15 @@ export default function Marketplace({
                 }`}>
                   {STATUS_FILTERS.find(f => f.id === statusFilter)?.label}
                   <button onClick={() => setStatusFilter('all')} className="ml-0.5 hover:opacity-70">
+                    <X className="w-3 h-3" />
+                  </button>
+                </span>
+              )}
+              {selectedCategoryFilter !== null && (
+                <span className="inline-flex items-center gap-1 px-2 py-1 bg-teal-100 text-teal-700 text-xs font-medium rounded-full">
+                  <Tags className="w-3 h-3" />
+                  {categories.find(c => c.category_id === selectedCategoryFilter)?.category_name}
+                  <button onClick={() => setSelectedCategoryFilter(null)} className="ml-0.5 hover:text-teal-900">
                     <X className="w-3 h-3" />
                   </button>
                 </span>

@@ -48,6 +48,11 @@ export default function App() {
     const stored = localStorage.getItem(AUTH_STORAGE_KEY);
     return stored ? JSON.parse(stored) : null;
   });
+  
+  // Kullanıcı doğrulama durumu - localStorage'da user varsa true başla
+  const [validatingUser, setValidatingUser] = useState<boolean>(() => {
+    return localStorage.getItem(AUTH_STORAGE_KEY) !== null;
+  });
 
   // useTools hook'u ile tool verilerini yönet
   const { tools, loading: toolsLoading, error: toolsError, fetchTools } = useTools();
@@ -95,25 +100,58 @@ export default function App() {
 
   // Kullanıcı verilerini yükle (sadece giriş yapılmışsa)
   useEffect(() => {
-    if (!currentUser) return;
+    if (!currentUser) {
+      setValidatingUser(false);
+      return;
+    }
+
+    let isCancelled = false;
 
     const loadUserData = async () => {
       setUserLoading(true);
       try {
+        // Önce kullanıcının hala var olduğunu doğrula
+        await userApi.getById(currentUser.user_id);
+        
+        if (isCancelled) return;
+        
+        // Kullanıcı doğrulandı
+        setValidatingUser(false);
+        
         const [tools, reservations] = await Promise.all([
           userApi.getTools(currentUser.user_id),
           userApi.getReservations(currentUser.user_id),
         ]);
+        
+        if (isCancelled) return;
+        
         setUserTools(tools);
         setMyReservations(reservations);
-      } catch (err) {
+      } catch (err: any) {
+        if (isCancelled) return;
+        
+        // Kullanıcı bulunamadıysa sessizce çıkış yap ve sayfayı yenile
+        if (err.message?.includes('bulunamadı') || err.message?.includes('not found')) {
+          localStorage.removeItem(AUTH_STORAGE_KEY);
+          window.location.reload();
+          return;
+        }
+        
+        // Diğer hatalar için loglama ve doğrulamayı bitir
         console.error('Kullanıcı verileri yüklenemedi:', err);
+        setValidatingUser(false);
       } finally {
-        setUserLoading(false);
+        if (!isCancelled) {
+          setUserLoading(false);
+        }
       }
     };
 
     loadUserData();
+    
+    return () => {
+      isCancelled = true;
+    };
   }, [currentUser]);
 
   // Son aktiviteleri yükle - sadece panel açıldığında
@@ -174,11 +212,26 @@ export default function App() {
     if (!currentUser) return;
     
     try {
+      // Tarihleri YYYY-MM-DD formatında gönder (timezone sorununu önler)
+      const formatDateStart = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}T00:00:00`;  // Günün başı
+      };
+      
+      const formatDateEnd = (date: Date): string => {
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}T23:59:59`;  // Günün sonu
+      };
+
       const reservationData: ReservationCreate = {
         user_id: currentUser.user_id,
         tool_id: tool.tool_id,
-        start_t: startDate.toISOString(),
-        end_t: endDate.toISOString(),
+        start_t: formatDateStart(startDate),
+        end_t: formatDateEnd(endDate),
       };
 
       const newReservation = await reservationApi.create(reservationData);
@@ -267,6 +320,12 @@ export default function App() {
             loading={userLoading}
             onLogout={handleLogout}
             onAdminDashboard={currentUser?.role === 'admin' ? () => setActiveTab('admin') : undefined}
+            onToolDeleted={(toolId) => {
+              // Kullanıcının aletlerinden sil
+              setUserTools(prev => prev.filter(t => t.tool_id !== toolId));
+              // Genel alet listesini güncelle
+              fetchTools();
+            }}
           />
         );
       default:
@@ -296,6 +355,16 @@ export default function App() {
   };
 
   const NotificationIcon = showNotification?.type === 'error' ? AlertCircle : CheckCircle;
+
+  // Kullanıcı doğrulanırken loading göster
+  if (validatingUser) {
+    return (
+      <div className="flex flex-col items-center justify-center min-h-screen bg-gray-50">
+        <div className="animate-spin rounded-full h-12 w-12 border-b-2 border-blue-600 mb-4"></div>
+        <p className="text-gray-500">Oturum doğrulanıyor...</p>
+      </div>
+    );
+  }
 
   // Giriş yapılmamışsa AuthPage göster
   if (!isAuthenticated || !currentUser) {
